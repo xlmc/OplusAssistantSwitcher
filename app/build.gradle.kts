@@ -34,6 +34,11 @@ android {
         versionName = versionNameProp
     }
 
+    buildFeatures {
+        // ModuleBuildInfo 将版本常量编译进 system_server 侧 dex，不能依赖运行时 PackageManager。
+        buildConfig = true
+    }
+
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
