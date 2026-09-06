@@ -1,4 +1,4 @@
-package com.ouhuan.oplusassistant.shared;
+﻿package com.ouhuan.oplusassistant.shared;
 
 /**
  * 欧唤全局常量。本类必须保持纯 Java（仅 java.* 依赖），
@@ -57,6 +57,7 @@ public final class Constants {
     public static final String EV_HOOK_METHOD_FOUND = "HOOK_METHOD_FOUND";
     public static final String EV_HOOK_INSTALLED = "HOOK_INSTALLED";
     public static final String EV_HOOK_FAILED = "HOOK_FAILED";
+    public static final String EV_HOOK_TARGET_NOT_FOUND = "HOOK_TARGET_NOT_FOUND";
     public static final String EV_ROM_UNSUPPORTED = "ROM_UNSUPPORTED";
 
     /** 调用日志事件（开发书 8.2）。 */

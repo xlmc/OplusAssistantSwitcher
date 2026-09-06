@@ -14,6 +14,7 @@ import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.ErrorCodes;
 import com.ouhuan.oplusassistant.shared.LaunchResult;
 import com.ouhuan.oplusassistant.shared.LaunchTarget;
+import com.ouhuan.oplusassistant.shared.RoleHolders;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
 import java.util.Collections;
@@ -61,10 +62,9 @@ public final class AssistantResolver {
         try {
             RoleManager roleManager = context.getSystemService(RoleManager.class);
             if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) {
-                List<String> holders = roleManager.getRoleHolders(RoleManager.ROLE_ASSISTANT);
-                if (holders != null && !holders.isEmpty()) {
-                    roleHolder = holders.get(0);
-                }
+                // 不同 API 级别 getRoleHolders 签名有差异，反射兼容读取
+                roleHolder = RoleHolders.primaryHolder(roleManager,
+                    android.os.Process.myUserHandle());
             }
         } catch (Throwable ignored) {
             // 部分 ROM 限制该查询；退化到 VIS 交叉验证

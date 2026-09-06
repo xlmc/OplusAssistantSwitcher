@@ -7,6 +7,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.provider.Settings;
 
+import com.ouhuan.oplusassistant.shared.RoleHolders;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
 /**
@@ -21,11 +22,9 @@ public final class SystemAssistantReader {
         try {
             RoleManager roleManager = context.getSystemService(RoleManager.class);
             if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_ASSISTANT)) {
-                java.util.List<String> holders =
-                    roleManager.getRoleHolders(RoleManager.ROLE_ASSISTANT);
-                if (holders != null && !holders.isEmpty()) {
-                    roleHolder = holders.get(0);
-                }
+                // 不同 API 级别 getRoleHolders 签名有差异，反射兼容读取
+                roleHolder = RoleHolders.primaryHolder(roleManager,
+                    android.os.Process.myUserHandle());
             }
         } catch (Throwable ignored) {
             // ROM 限制时退化到 VIS 读取
