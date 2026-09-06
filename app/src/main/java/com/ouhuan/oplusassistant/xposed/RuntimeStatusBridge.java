@@ -10,7 +10,6 @@ import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
-import android.os.UserHandle;
 
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.LogEvent;
@@ -114,8 +113,8 @@ public final class RuntimeStatusBridge {
                 RuntimeStatusContract.SERVICE_CLASS));
             boolean bound = context.bindServiceAsUser(intent, connection,
                 Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND,
-                // UserHandle 的公开 SDK 没有 SYSTEM/USER_SYSTEM 常量；0 是 system user。
-                new UserHandle(0));
+                // system_server 的公开 user handle，避免依赖隐藏的 SYSTEM 常量。
+                Process.myUserHandle());
             if (!bound) {
                 markChannelFailed("bindServiceAsUser returned false");
             }
