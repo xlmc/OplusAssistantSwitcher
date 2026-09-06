@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: Build / Lint / Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK (compile + lint + unit tests)
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug lintDebug testDebugUnitTest --stacktrace
+
+      - name: Verify Xposed metadata (java_init.list / module.prop / scope.list)
+        run: |
+          APK="$(ls app/build/outputs/apk/debug/*.apk | head -n 1)"
+          bash .github/scripts/verify_xposed_meta.sh "$APK"
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event_name == 'pull_request' && format('OplusAssistantSwitcher-debug-PR{0}', github.event.number) || 'OplusAssistantSwitcher-debug' }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

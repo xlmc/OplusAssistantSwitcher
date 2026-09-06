@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <queries>
+        <intent>
+            <action android:name="android.service.voice.VoiceInteractionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.ASSIST" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VOICE_COMMAND" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".app.AssistApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.Ouhuan">
+
+        <activity
+            android:name=".ui.HomeActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.AssistantPickerActivity"
+            android:exported="false"
+            android:label="@string/picker_title" />
+
+        <activity
+            android:name=".ui.LogsActivity"
+            android:exported="false"
+            android:label="@string/logs_title" />
+
+        <activity
+            android:name=".ui.DiagnosticsActivity"
+            android:exported="false"
+            android:label="@string/diagnostics_title" />
+
+        <activity
+            android:name=".ui.SettingsActivity"
+            android:exported="false"
+            android:label="@string/settings_title" />
+
+        <receiver
+            android:name=".data.LogEntryReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.ouhuan.oplusassistant.action.LOG_EVENT" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

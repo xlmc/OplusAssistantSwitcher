@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">欧唤</string>
+    <string name="app_full_name">欧唤 · Oplus Assistant Switcher</string>
+
+    <string name="picker_title">选择助手</string>
+    <string name="logs_title">日志</string>
+    <string name="diagnostics_title">诊断信息</string>
+    <string name="settings_title">设置</string>
+
+    <string name="home_module_status">模块状态</string>
+    <string name="home_module_enabled">已启用</string>
+    <string name="home_module_disabled">未启用</string>
+    <string name="home_service_unbound">LSPosed 服务未连接，设置暂不生效</string>
+    <string name="home_hook_status">Hook 状态</string>
+    <string name="home_hook_not_active">未生效（HOOK_NOT_ACTIVE）</string>
+    <string name="hook_ok">正常</string>
+    <string name="hook_failed">异常</string>
+    <string name="hook_target_missing">目标未找到</string>
+    <string name="hook_rom_unsupported">ROM 不支持</string>
+    <string name="hook_initializing">初始化中</string>
+    <string name="home_system_assistant">当前系统默认助手</string>
+    <string name="home_power_target">0.5 秒电源键当前助手</string>
+    <string name="home_target_not_taken_over">未接管（系统原始目标）</string>
+    <string name="home_target_none_selected">未选择（触发后将静默结束）</string>
+    <string name="home_recent_call">最近一次调用</string>
+    <string name="home_last_call_none">暂无调用记录</string>
+    <string name="home_last_call_success">成功</string>
+    <string name="home_last_call_failure">失败</string>
+    <string name="btn_pick_assistant">选择助手</string>
+    <string name="btn_view_logs">查看日志</string>
+    <string name="btn_diagnostics">诊断信息</string>
+    <string name="btn_settings">设置</string>
+
+    <string name="picker_empty">未检测到可用第三方语音助手</string>
+    <string name="picker_note_unsaved">设置未能写入：LSPosed 服务未连接</string>
+
+    <string name="logs_only_failures">仅显示失败</string>
+    <string name="btn_copy_all">复制完整诊断</string>
+    <string name="btn_clear">清空日志</string>
+    <string name="logs_clear_title">清空日志</string>
+    <string name="logs_clear_message">将删除全部本地日志记录，确定继续吗？</string>
+    <string name="logs_clear_confirm">清空</string>
+    <string name="logs_no_detail">（无附加字段）</string>
+    <string name="toast_copied">已复制</string>
+
+    <string name="diagnostics_device">设备信息</string>
+    <string name="diagnostics_android">Android</string>
+    <string name="diagnostics_coloros">ColorOS / OPlus 版本</string>
+    <string name="diagnostics_model">机型</string>
+    <string name="diagnostics_service">LSPosed 服务</string>
+    <string name="diagnostics_service_bound">已连接</string>
+    <string name="diagnostics_service_unbound">未连接（模块未启用或 LSPosed 未安装）</string>
+    <string name="diagnostics_hook">Hook 状态详情</string>
+    <string name="diagnostics_selection">当前选择</string>
+    <string name="diagnostics_stats">日志统计</string>
+    <string name="diagnostics_total">总数</string>
+    <string name="diagnostics_failures">失败数</string>
+    <string name="btn_refresh">刷新</string>
+
+    <string name="settings_enable_module">启用模块</string>
+    <string name="settings_enable_module_hint">关闭后 0.5 秒电源键恢复系统原行为</string>
+    <string name="settings_detail">详细诊断模式</string>
+    <string name="settings_detail_hint">日志中附加类名、方法名、Intent 与异常摘要（不记录语音内容）</string>
+    <string name="settings_service_state">LSPosed 服务状态</string>
+    <string name="settings_service_ok">已连接，设置将实时生效</string>
+    <string name="settings_service_unbound">未连接：请先在 LSPosed 中启用本模块（作用域：system）并重启</string>
+    <string name="btn_reset_selection">清除当前选择</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本 %1$s</string>
+    <string name="settings_about_text">欧唤不是语音助手本体，而是 OPlus 系统的「系统语音助手入口切换器」：把 ColorOS 约 0.5 秒电源键唤醒小布的入口，路由到你选择的第三方语音助手。调用失败时前台完全静默，仅记录日志。</string>
+</resources>

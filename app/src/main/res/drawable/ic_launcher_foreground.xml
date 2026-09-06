@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 话筒造型：代表语音助手入口切换 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30a10,10 0 0 1 10,10v12a10,10 0 0 1 -20,0V40a10,10 0 0 1 10,-10z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,52a16,16 0 0 0 32,0h5a21,21 0 0 1 -42,0z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M51.5,66h5v8h-5z" />
+    <path
+        android:fillColor="#7FD1AE"
+        android:pathData="M72,38a18,18 0 0 0 -6.5,-9.5l3,-3.9A23,23 0 0 1 77,38z" />
+</vector>
