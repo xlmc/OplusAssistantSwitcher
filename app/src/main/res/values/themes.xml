@@ -2,6 +2,8 @@
 <resources>
     <style name="Theme.Ouhuan" parent="Theme.Material3.DayNight" />
 
+    <style name="Theme.Ouhuan.NoActionBar" parent="Theme.Material3.DayNight.NoActionBar" />
+
     <style name="SectionTitle" parent="TextAppearance.Material3.TitleMedium">
         <item name="android:textStyle">bold</item>
     </style>

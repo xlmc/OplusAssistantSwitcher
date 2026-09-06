@@ -14,6 +14,14 @@
         android:text="@string/picker_empty"
         android:visibility="gone" />
 
+    <TextView
+        android:id="@+id/tvHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingBottom="8dp"
+        android:text="@string/picker_hint"
+        android:textSize="12sp" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvAssistants"
         android:layout_width="match_parent"

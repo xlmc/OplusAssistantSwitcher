@@ -1,6 +1,7 @@
 package com.ouhuan.oplusassistant.ui;
 
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.widget.TextView;
 
@@ -18,27 +19,52 @@ import com.ouhuan.oplusassistant.shared.LaunchResult;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 import com.ouhuan.oplusassistant.system.SystemAssistantReader;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 /**
- * 首页（开发书 9）：模块状态、Hook 状态、系统默认助手、电源键当前助手、
- * 最近一次调用与日志/诊断入口。所有状态读取均走后台线程，回主线程刷新。
+ * 首页（开发书 9；Issue #1 新信息层级）：
+ * 模块状态 → 当前系统默认助手 → 0.5 秒电源键当前助手 → 最近一次调用 →
+ * 底部操作与版本页脚。包名/组件名等开发信息一律移至诊断页。
  */
 public class HomeActivity extends AppCompatActivity {
 
     private TextView tvModuleStatus;
-    private TextView tvHookStatus;
+    private TextView tvHookStatusSecondary;
+    private TextView tvScope;
     private TextView tvSystemAssistant;
+    private TextView tvSystemAssistantSecondary;
     private TextView tvPowerTarget;
+    private TextView tvPowerTargetSecondary;
     private TextView tvLastCall;
+    private TextView tvLastCallSecondary;
+    private TextView tvVersion;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_home);
         tvModuleStatus = findViewById(R.id.tvModuleStatus);
-        tvHookStatus = findViewById(R.id.tvHookStatus);
+        tvHookStatusSecondary = findViewById(R.id.tvHookStatusSecondary);
+        tvScope = findViewById(R.id.tvScope);
         tvSystemAssistant = findViewById(R.id.tvSystemAssistant);
+        tvSystemAssistantSecondary = findViewById(R.id.tvSystemAssistantSecondary);
         tvPowerTarget = findViewById(R.id.tvPowerTarget);
+        tvPowerTargetSecondary = findViewById(R.id.tvPowerTargetSecondary);
         tvLastCall = findViewById(R.id.tvLastCall);
+        tvLastCallSecondary = findViewById(R.id.tvLastCallSecondary);
+        tvVersion = findViewById(R.id.tvVersion);
+
+        tvScope.setText(getString(R.string.home_scope_format,
+            getString(R.string.home_scope_value)));
+        try {
+            String version = getPackageManager()
+                .getPackageInfo(getPackageName(), 0).versionName;
+            tvVersion.setText(getString(R.string.home_version_format, version));
+        } catch (PackageManager.NameNotFoundException e) {
+            tvVersion.setText(R.string.app_full_name);
+        }
 
         findViewById(R.id.btnPickAssistant).setOnClickListener(v ->
             startActivity(new Intent(this, AssistantPickerActivity.class)));
@@ -61,61 +87,94 @@ public class HomeActivity extends AppCompatActivity {
             boolean enabled = ConfigStore.isModuleEnabled(this);
             boolean serviceBound = AssistApp.service() != null;
             String selectedPkg = ConfigStore.selectedPackage(this);
-            String selectedComp = ConfigStore.selectedComponent(this);
             SystemAssistantState systemDefault = new SystemAssistantReader().read(this);
             String hookStatus = HookStateStore.status(this);
-            long hookTimestamp = HookStateStore.timestamp(this);
             LogEntity last = LogDb.get(this).dao().last();
 
-            String moduleLine = enabled
-                ? getString(R.string.home_module_enabled)
-                : getString(R.string.home_module_disabled);
+            // ---- 模块状态卡：是否生效 + Hook 次级状态 + 作用域 ----
+            boolean hookOk = Constants.EV_HOOK_INSTALLED.equals(hookStatus);
+            String moduleMain;
+            if (!enabled) {
+                moduleMain = getString(R.string.home_module_disabled);
+            } else if (hookOk) {
+                moduleMain = getString(R.string.home_module_active);
+            } else if (hookStatus != null) {
+                moduleMain = getString(R.string.home_module_enabled_wait_reboot);
+            } else {
+                moduleMain = getString(R.string.home_module_inactive);
+            }
+            StringBuilder hookSecondary = new StringBuilder();
+            if (hookStatus == null) {
+                hookSecondary.append(getString(R.string.home_hook_status_format,
+                    getString(R.string.home_hook_not_active)));
+            } else {
+                hookSecondary.append(getString(R.string.home_hook_status_format,
+                    describeHookStatus(hookStatus)));
+            }
             if (!serviceBound) {
-                moduleLine += "\n" + getString(R.string.home_service_unbound);
+                hookSecondary.append(" · ").append(getString(R.string.home_service_unbound));
             }
 
-            String hookLine;
-            if (hookStatus == null) {
-                hookLine = getString(R.string.home_hook_not_active);
+            // ---- 系统默认助手卡：与 Hook 状态完全解耦（Issue #1 第四条） ----
+            String assistantMain = systemDefault.describe();
+            String assistantSecondary;
+            if (systemDefault.isAvailable) {
+                assistantSecondary = describeSource(systemDefault.source);
             } else {
-                String meaning = describeHookStatus(hookStatus);
-                hookLine = meaning + "（" + hookStatus + "）";
-                if (hookTimestamp > 0) {
-                    hookLine += "\n" + android.text.format.DateUtils.formatDateTime(this,
-                        hookTimestamp,
-                        android.text.format.DateUtils.FORMAT_SHOW_TIME
-                            | android.text.format.DateUtils.FORMAT_SHOW_DATE);
+                assistantSecondary = getString(R.string.home_assistant_source_none);
+            }
+
+            // ---- 电源键当前助手卡 ----
+            String targetMain;
+            String targetSecondary;
+            if (!enabled) {
+                targetMain = getString(R.string.home_target_not_taken_over);
+                targetSecondary = getString(R.string.home_target_secondary_disabled);
+            } else if (selectedPkg == null || selectedPkg.trim().isEmpty()) {
+                targetMain = getString(R.string.home_target_none_selected);
+                targetSecondary = getString(R.string.home_target_secondary_none);
+            } else {
+                targetMain = describePackageLabel(selectedPkg);
+                targetSecondary = "";
+            }
+
+            // ---- 最近一次调用卡 ----
+            String lastMain;
+            String lastSecondary = "";
+            if (last == null) {
+                lastMain = getString(R.string.home_last_call_none);
+            } else {
+                String time = new SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                    .format(new Date(last.timestamp));
+                if (LaunchResult.SUCCESS.name().equals(last.result)) {
+                    lastMain = getString(R.string.home_last_call_success) + " · " + time;
+                } else {
+                    lastMain = getString(R.string.home_last_call_failure) + " · " + time;
+                    lastSecondary = last.failureCode == null ? "" : last.failureCode;
                 }
             }
 
-            String targetLine;
-            if (!enabled) {
-                targetLine = getString(R.string.home_target_not_taken_over);
-            } else if (selectedPkg == null || selectedPkg.trim().isEmpty()) {
-                targetLine = getString(R.string.home_target_none_selected);
-            } else {
-                targetLine = describePackage(selectedPkg, selectedComp);
-            }
-
-            String lastCallLine = last == null
-                ? getString(R.string.home_last_call_none)
-                : (LaunchResult.SUCCESS.name().equals(last.result)
-                    ? getString(R.string.home_last_call_success) + " · "
-                    + last.toModel().formatTimestamp() + " · " + last.event
-                    : getString(R.string.home_last_call_failure) + " · "
-                    + last.toModel().formatTimestamp() + " · "
-                    + last.failureCode);
-
-            String finalModuleLine = moduleLine;
-            String finalHookLine = hookLine;
-            String finalTargetLine = targetLine;
-            String finalLastCallLine = lastCallLine;
+            String fModuleMain = moduleMain;
+            String fHookSecondary = hookSecondary.toString();
+            String fAssistantSecondary = assistantSecondary;
+            String fTargetMain = targetMain;
+            String fTargetSecondary = targetSecondary;
+            String fLastMain = lastMain;
+            String fLastSecondary = lastSecondary;
             runOnUiThread(() -> {
-                tvModuleStatus.setText(finalModuleLine);
-                tvHookStatus.setText(finalHookLine);
-                tvSystemAssistant.setText(systemDefault.describe());
-                tvPowerTarget.setText(finalTargetLine);
-                tvLastCall.setText(finalLastCallLine);
+                tvModuleStatus.setText(fModuleMain);
+                tvHookStatusSecondary.setText(fHookSecondary);
+                tvSystemAssistant.setText(assistantMain);
+                tvSystemAssistantSecondary.setText(fAssistantSecondary);
+                tvPowerTarget.setText(fTargetMain);
+                tvPowerTargetSecondary.setText(fTargetSecondary);
+                tvLastCall.setText(fLastMain);
+                if (fLastSecondary.isEmpty()) {
+                    tvLastCallSecondary.setVisibility(android.view.View.GONE);
+                } else {
+                    tvLastCallSecondary.setVisibility(android.view.View.VISIBLE);
+                    tvLastCallSecondary.setText(fLastSecondary);
+                }
             });
         });
     }
@@ -127,21 +186,33 @@ public class HomeActivity extends AppCompatActivity {
             case Constants.EV_HOOK_FAILED:
                 return getString(R.string.hook_failed);
             case Constants.EV_HOOK_TARGET_NOT_FOUND:
-                return getString(R.string.hook_target_missing);
+                return getString(R.string.hook_target_missing) + "（" + status + "）";
             case Constants.EV_ROM_UNSUPPORTED:
-                return getString(R.string.hook_rom_unsupported);
+                return getString(R.string.hook_rom_unsupported) + "（" + status + "）";
             default:
-                return getString(R.string.hook_initializing);
+                return getString(R.string.hook_initializing) + "（" + status + "）";
         }
     }
 
-    private String describePackage(String pkg, String component) {
+    private String describeSource(String source) {
+        if (SystemAssistantState.SOURCE_ROLE.equals(source)) {
+            return getString(R.string.home_assistant_source_role);
+        }
+        if (SystemAssistantState.SOURCE_ASSIST_COMPONENT.equals(source)) {
+            return getString(R.string.home_assistant_source_component);
+        }
+        if (SystemAssistantState.SOURCE_VIS.equals(source)) {
+            return getString(R.string.home_assistant_source_vis);
+        }
+        return getString(R.string.home_assistant_source_none);
+    }
+
+    /** 首页仅显示应用名，包名/组件名等开发信息移至诊断页。 */
+    private String describePackageLabel(String pkg) {
         try {
-            android.content.pm.PackageManager pm = getPackageManager();
+            PackageManager pm = getPackageManager();
             android.content.pm.ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-            String label = String.valueOf(pm.getApplicationLabel(info));
-            return label + "（" + pkg + "）"
-                + (component == null || component.isEmpty() ? "" : "\n" + component);
+            return String.valueOf(pm.getApplicationLabel(info));
         } catch (Throwable t) {
             return pkg;
         }

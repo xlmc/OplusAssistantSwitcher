@@ -12,21 +12,27 @@ import com.ouhuan.oplusassistant.data.AppExecutors;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
 import com.ouhuan.oplusassistant.shared.Constants;
+import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 import com.ouhuan.oplusassistant.system.DeviceProps;
+import com.ouhuan.oplusassistant.system.SystemAssistantReader;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
 /**
- * 诊断信息页（开发书 4.1 Diagnostics / 9）：设备信息、LSPosed 服务、
- * Hook 状态详情与日志统计。只读展示。
+ * 诊断信息页（开发书 4.1 Diagnostics / 9；Issue #1 第五条）。
+ * 普通页面收敛后，完整技术数据集中在此：设备、LSPosed 服务、Hook 状态与技术细节
+ * （strategy / class / method / trigger）、系统默认助手原始检测值、
+ * 选择详情（packageName / ComponentName / 资格判定依据）与日志统计。
  */
 public class DiagnosticsActivity extends AppCompatActivity {
 
     private TextView tvDevice;
     private TextView tvService;
     private TextView tvHook;
+    private TextView tvHookTech;
+    private TextView tvAssistantDetail;
     private TextView tvSelection;
     private TextView tvStats;
 
@@ -37,6 +43,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
         tvDevice = findViewById(R.id.tvDevice);
         tvService = findViewById(R.id.tvService);
         tvHook = findViewById(R.id.tvHook);
+        tvHookTech = findViewById(R.id.tvHookTech);
+        tvAssistantDetail = findViewById(R.id.tvAssistantDetail);
         tvSelection = findViewById(R.id.tvSelection);
         tvStats = findViewById(R.id.tvStats);
         findViewById(R.id.btnRefresh).setOnClickListener(v -> refresh());
@@ -75,11 +83,21 @@ public class DiagnosticsActivity extends AppCompatActivity {
                     hook += "\n" + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss",
                         Locale.getDefault()).format(new Date(ts));
                 }
-                String strategy = HookStateStore.strategy(this);
-                if (strategy != null && !"-".equals(strategy)) {
-                    hook += "\nhookStrategy=" + strategy;
-                }
             }
+
+            String hookTech = "hookStrategy=" + Constants.HOOK_STRATEGY_COLOROS16
+                + "\nhookClass=" + Constants.HOOK_CLASS
+                + "\nhookMethod=" + Constants.HOOK_METHOD
+                + "\ntrigger=" + Constants.TRIGGER_POWER_ASSIST_0X3F3
+                + " (Message.what=0x3F3)"
+                + "\nscope=system";
+
+            SystemAssistantState systemDefault = new SystemAssistantReader().read(this);
+            String assistantDetail = systemDefault.describe()
+                + "\nsource=" + systemDefault.source
+                + "\nroleHolder=" + orDash(systemDefault.roleHolderPackage)
+                + "\nvoiceInteractionService=" + orDash(systemDefault.voiceInteractionService)
+                + "\nassistComponent=" + orDash(systemDefault.assistComponent);
 
             String selection;
             if (!ConfigStore.isModuleEnabled(this)) {
@@ -88,7 +106,9 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 String pkg = ConfigStore.selectedPackage(this);
                 selection = pkg == null || pkg.trim().isEmpty()
                     ? getString(R.string.home_target_none_selected)
-                    : pkg;
+                    : "packageName=" + pkg
+                        + "\nComponentName=" + orDash(ConfigStore.selectedComponent(this))
+                        + "\neligibility=" + orDash(ConfigStore.selectedSource(this));
             }
 
             int total = LogDb.get(this).dao().totalCount();
@@ -99,16 +119,24 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String finalDevice = device;
             String finalService = service;
             String finalHook = hook;
+            String finalHookTech = hookTech;
+            String finalAssistantDetail = assistantDetail;
             String finalSelection = selection;
             String finalStats = stats;
             runOnUiThread(() -> {
                 tvDevice.setText(finalDevice);
                 tvService.setText(finalService);
                 tvHook.setText(finalHook);
+                tvHookTech.setText(finalHookTech);
+                tvAssistantDetail.setText(finalAssistantDetail);
                 tvSelection.setText(finalSelection);
                 tvStats.setText(finalStats);
             });
         });
+    }
+
+    private static String orDash(String value) {
+        return value == null || value.isEmpty() ? "-" : value;
     }
 
     private String describeService() {

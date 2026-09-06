@@ -9,6 +9,7 @@ import android.content.pm.ServiceInfo;
 
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
+import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,17 +18,25 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 助手选择页候选扫描（开发书 5.2 / 9）。
- * 不使用固定名单：候选由安装状态与 Assistant 能力动态决定，
- * 仅输出已安装、组件启用、可解析且可实际调用的第三方助手。
+ * 助手选择页候选扫描（开发书 5.2 / 9；Issue #1 收紧后的规则）。
+ *
+ * 入选条件（全部满足）：
+ * 1. 包内声明 android.service.voice.VoiceInteractionService，且该服务要求
+ *    android.permission.BIND_VOICE_INTERACTION（强信号，必要条件）；
+ * 2. 当前用户下已安装、应用启用、组件启用；
+ * 3. 存在可实际调用的 Assistant 入口（ACTION_ASSIST 或 ACTION_VOICE_COMMAND Activity）；
+ * 4. 排除欧唤自身、ColorOS 内置小布等系统原始目标、当前系统默认助手。
+ *
+ * ACTION_ASSIST 单独不再构成入选条件：Firefox 等仅注册 assist 响应的
+ * 普通应用不会进入列表；也不使用任何固定包名白名单。
  */
 public final class AssistantScanner {
 
     public List<AssistantCandidate> scan(Context context) {
         PackageManager pm = context.getPackageManager();
-        Set<String> visPackages = new LinkedHashSet<>();
-        Set<String> assistPackages = new LinkedHashSet<>();
 
+        // 1) 强信号候选：VIS 服务 + BIND_VOICE_INTERACTION 权限
+        Set<String> visPackages = new LinkedHashSet<>();
         try {
             List<ResolveInfo> services = pm.queryIntentServices(
                 new Intent(Constants.VIS_SERVICE_INTERFACE),
@@ -44,25 +53,10 @@ public final class AssistantScanner {
         } catch (Throwable ignored) {
         }
 
-        try {
-            List<ResolveInfo> activities = pm.queryIntentActivities(
-                new Intent(Intent.ACTION_ASSIST), PackageManager.GET_META_DATA);
-            for (ResolveInfo info : activities) {
-                if (info != null && info.activityInfo != null
-                    && info.activityInfo.packageName != null) {
-                    assistPackages.add(info.activityInfo.packageName);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-
-        Set<String> candidates = new LinkedHashSet<>();
-        candidates.addAll(visPackages);
-        candidates.addAll(assistPackages);
-
+        // 2) 过滤并解析可调用入口
         List<AssistantCandidate> result = new ArrayList<>();
-        for (String pkg : candidates) {
-            if (isExcluded(context, pm, pkg)) {
+        for (String pkg : visPackages) {
+            if (isExcluded(context, pkg)) {
                 continue;
             }
             if (!isAppEnabled(pm, pkg)) {
@@ -79,13 +73,13 @@ public final class AssistantScanner {
                 continue;
             }
             result.add(new AssistantCandidate(pkg, loadLabel(pm, pkg), entry, method,
-                visPackages.contains(pkg)));
+                true, "VoiceInteractionService + BIND_VOICE_INTERACTION"));
         }
         Collections.sort(result, (a, b) -> a.label.compareToIgnoreCase(b.label));
         return result;
     }
 
-    private boolean isExcluded(Context context, PackageManager pm, String pkg) {
+    private boolean isExcluded(Context context, String pkg) {
         if (pkg == null || pkg.isEmpty()) {
             return true;
         }
@@ -97,14 +91,18 @@ public final class AssistantScanner {
                 return true;
             }
         }
-        com.ouhuan.oplusassistant.shared.SystemAssistantState systemDefault =
-            new SystemAssistantReader().read(context);
+        SystemAssistantState systemDefault = new SystemAssistantReader().read(context);
         if (pkg.equals(systemDefault.roleHolderPackage)) {
             return true;
         }
         if (systemDefault.voiceInteractionService != null
             && systemDefault.voiceInteractionService.contains("/")
             && packagePart(systemDefault.voiceInteractionService).equals(pkg)) {
+            return true;
+        }
+        if (systemDefault.assistComponent != null
+            && systemDefault.assistComponent.contains("/")
+            && packagePart(systemDefault.assistComponent).equals(pkg)) {
             return true;
         }
         return false;

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">欧唤</string>
+    <string name="app_english_name">Oplus Assistant Switcher</string>
     <string name="app_full_name">欧唤 · Oplus Assistant Switcher</string>
+    <string name="home_version_format">欧唤 v%1$s</string>
 
     <string name="picker_title">选择助手</string>
     <string name="logs_title">日志</string>
@@ -9,10 +11,14 @@
     <string name="settings_title">设置</string>
 
     <string name="home_module_status">模块状态</string>
-    <string name="home_module_enabled">已启用</string>
+    <string name="home_module_active">已生效</string>
+    <string name="home_module_inactive">未生效</string>
+    <string name="home_module_enabled_wait_reboot">已启用（重启后生效）</string>
     <string name="home_module_disabled">未启用</string>
     <string name="home_service_unbound">LSPosed 服务未连接，设置暂不生效</string>
-    <string name="home_hook_status">Hook 状态</string>
+    <string name="home_hook_status_format">Hook 状态：%1$s</string>
+    <string name="home_scope_format">作用域：%1$s</string>
+    <string name="home_scope_value">system</string>
     <string name="home_hook_not_active">未生效（HOOK_NOT_ACTIVE）</string>
     <string name="hook_ok">正常</string>
     <string name="hook_failed">异常</string>
@@ -20,9 +26,15 @@
     <string name="hook_rom_unsupported">ROM 不支持</string>
     <string name="hook_initializing">初始化中</string>
     <string name="home_system_assistant">当前系统默认助手</string>
+    <string name="home_assistant_source_role">来源：ROLE_ASSISTANT</string>
+    <string name="home_assistant_source_vis">来源：VoiceInteractionService</string>
+    <string name="home_assistant_source_component">来源：电源键助手组件</string>
+    <string name="home_assistant_source_none">标准 Android 助手状态不可用，可能未设置</string>
     <string name="home_power_target">0.5 秒电源键当前助手</string>
     <string name="home_target_not_taken_over">未接管（系统原始目标）</string>
-    <string name="home_target_none_selected">未选择（触发后将静默结束）</string>
+    <string name="home_target_secondary_disabled">模块关闭时电源键执行系统原逻辑</string>
+    <string name="home_target_none_selected">未选择</string>
+    <string name="home_target_secondary_none">触发后将静默结束，不执行小布</string>
     <string name="home_recent_call">最近一次调用</string>
     <string name="home_last_call_none">暂无调用记录</string>
     <string name="home_last_call_success">成功</string>
@@ -33,7 +45,11 @@
     <string name="btn_settings">设置</string>
 
     <string name="picker_empty">未检测到可用第三方语音助手</string>
+    <string name="picker_hint">仅列出声明 VoiceInteractionService 的第三方应用</string>
     <string name="picker_note_unsaved">设置未能写入：LSPosed 服务未连接</string>
+    <string name="picker_source_play">通过 Google Play 安装</string>
+    <string name="picker_source_system">系统预装</string>
+    <string name="picker_source_unknown">来源未知</string>
 
     <string name="logs_only_failures">仅显示失败</string>
     <string name="btn_copy_all">复制完整诊断</string>
@@ -52,6 +68,9 @@
     <string name="diagnostics_service_bound">已连接</string>
     <string name="diagnostics_service_unbound">未连接（模块未启用或 LSPosed 未安装）</string>
     <string name="diagnostics_hook">Hook 状态详情</string>
+    <string name="diagnostics_hook_tech">Hook 技术详情</string>
+    <string name="diagnostics_assistant_detail">系统默认助手详情</string>
+    <string name="diagnostics_selection_detail">选择详情</string>
     <string name="diagnostics_selection">当前选择</string>
     <string name="diagnostics_stats">日志统计</string>
     <string name="diagnostics_total">总数</string>

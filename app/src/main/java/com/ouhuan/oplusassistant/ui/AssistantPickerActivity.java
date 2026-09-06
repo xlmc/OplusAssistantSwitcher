@@ -1,9 +1,13 @@
 package com.ouhuan.oplusassistant.ui;
 
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.RadioButton;
 import android.widget.TextView;
 
@@ -22,8 +26,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 助手选择页（开发书 9）：只显示当前检测到的有效第三方语音助手；
- * 没有有效候选时提示「未检测到可用第三方语音助手」，不展示普通应用列表。
+ * 助手选择页（开发书 9；Issue #1 重构）。
+ * 普通列表只显示：应用图标、助手名称、简短来源、单选状态。
+ * 包名 / ComponentName / 检测细节一律移至诊断页。
  */
 public class AssistantPickerActivity extends AppCompatActivity {
 
@@ -58,9 +63,33 @@ public class AssistantPickerActivity extends AppCompatActivity {
 
     private void select(AssistantCandidate candidate) {
         boolean remoteOk = ConfigStore.writeSelection(this,
-            candidate.packageName, candidate.componentName);
+            candidate.packageName, candidate.componentName, candidate.eligibilitySource);
         adapter.setSelected(candidate.packageName);
         tvNote.setVisibility(remoteOk ? View.GONE : View.VISIBLE);
+    }
+
+    /** 来源信息：安装渠道 / 是否系统预装（不含包名等开发细节）。 */
+    private String describeSource(PackageManager pm, String pkg) {
+        try {
+            ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+            boolean systemApp = (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    String installer = pm.getInstallSourceInfo(pkg)
+                        .getInstallingPackageName();
+                    if ("com.android.vending".equals(installer)) {
+                        return getString(R.string.picker_source_play);
+                    }
+                } catch (Throwable ignored) {
+                    // 无安装来源记录
+                }
+            }
+            if (systemApp) {
+                return getString(R.string.picker_source_system);
+            }
+        } catch (Throwable ignored) {
+        }
+        return getString(R.string.picker_source_unknown);
     }
 
     private final class Adapter extends RecyclerView.Adapter<Adapter.Holder> {
@@ -91,9 +120,13 @@ public class AssistantPickerActivity extends AppCompatActivity {
         @Override
         public void onBindViewHolder(@NonNull Holder holder, int position) {
             AssistantCandidate item = items.get(position);
+            PackageManager pm = holder.itemView.getContext().getPackageManager();
             holder.tvLabel.setText(item.label);
-            holder.tvPackage.setText(item.packageName);
-            holder.tvComponent.setText(item.componentName + " · " + item.launchMethod);
+            holder.tvSource.setText(describeSource(pm, item.packageName));
+            try {
+                holder.ivIcon.setImageDrawable(pm.getApplicationIcon(item.packageName));
+            } catch (Throwable ignored) {
+            }
             holder.rb.setChecked(item.packageName.equals(selectedPackage));
             holder.itemView.setOnClickListener(v -> select(item));
         }
@@ -104,17 +137,17 @@ public class AssistantPickerActivity extends AppCompatActivity {
         }
 
         final class Holder extends RecyclerView.ViewHolder {
+            final ImageView ivIcon;
             final RadioButton rb;
             final TextView tvLabel;
-            final TextView tvPackage;
-            final TextView tvComponent;
+            final TextView tvSource;
 
             Holder(@NonNull View itemView) {
                 super(itemView);
+                ivIcon = itemView.findViewById(R.id.ivIcon);
                 rb = itemView.findViewById(R.id.rbSelect);
                 tvLabel = itemView.findViewById(R.id.tvLabel);
-                tvPackage = itemView.findViewById(R.id.tvPackage);
-                tvComponent = itemView.findViewById(R.id.tvComponent);
+                tvSource = itemView.findViewById(R.id.tvSource);
                 rb.setClickable(false);
             }
         }

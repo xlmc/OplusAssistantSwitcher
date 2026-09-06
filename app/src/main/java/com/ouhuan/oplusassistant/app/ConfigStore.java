@@ -14,6 +14,7 @@ import io.github.libxposed.service.XposedService;
 public final class ConfigStore {
 
     private static final String LOCAL_PREFS = "app_settings";
+    private static final String KEY_SELECTED_SOURCE = "selected_source";
 
     private ConfigStore() {
     }
@@ -73,14 +74,21 @@ public final class ConfigStore {
         return remote;
     }
 
-    public static boolean writeSelection(Context context, String pkg, String component) {
+    public static boolean writeSelection(Context context, String pkg, String component,
+                                         String eligibilitySource) {
         boolean remote = putRemote(p -> p.putString(Constants.KEY_SELECTED_PACKAGE, pkg)
             .putString(Constants.KEY_SELECTED_COMPONENT, component));
         local(context).edit()
             .putString(Constants.KEY_SELECTED_PACKAGE, pkg)
             .putString(Constants.KEY_SELECTED_COMPONENT, component)
+            .putString(KEY_SELECTED_SOURCE, eligibilitySource)
             .apply();
         return remote;
+    }
+
+    /** 资格判定依据（仅本地镜像，供诊断页展示）。 */
+    public static String selectedSource(Context context) {
+        return local(context).getString(KEY_SELECTED_SOURCE, null);
     }
 
     public static boolean clearSelection(Context context) {
@@ -89,6 +97,7 @@ public final class ConfigStore {
         local(context).edit()
             .putString(Constants.KEY_SELECTED_PACKAGE, null)
             .putString(Constants.KEY_SELECTED_COMPONENT, null)
+            .putString(KEY_SELECTED_SOURCE, null)
             .apply();
         return remote;
     }

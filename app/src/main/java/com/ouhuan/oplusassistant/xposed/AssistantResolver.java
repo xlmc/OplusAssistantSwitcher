@@ -75,14 +75,34 @@ public final class AssistantResolver {
                 "voice_interaction_service");
         } catch (Throwable ignored) {
         }
+        String assistComponent = null;
+        try {
+            assistComponent = Settings.Secure.getString(context.getContentResolver(),
+                "assistant");
+        } catch (Throwable ignored) {
+        }
         String label = "";
-        String primaryPkg = roleHolder != null && !roleHolder.isEmpty() ? roleHolder : vis;
+        String primaryPkg = roleHolder != null && !roleHolder.isEmpty()
+            ? roleHolder
+            : (vis != null && !vis.isEmpty()
+                ? packageOf(vis)
+                : packageOf(assistComponent));
         if (primaryPkg != null && !primaryPkg.isEmpty()) {
             label = loadLabel(context, primaryPkg);
         }
-        boolean available = (roleHolder != null && !roleHolder.isEmpty())
-            || (vis != null && !vis.isEmpty());
-        return new SystemAssistantState(roleHolder, vis, label, available);
+        boolean available = primaryPkg != null && !primaryPkg.isEmpty();
+        String source;
+        if (roleHolder != null && !roleHolder.isEmpty()) {
+            source = SystemAssistantState.SOURCE_ROLE;
+        } else if (vis != null && !vis.isEmpty()) {
+            source = SystemAssistantState.SOURCE_VIS;
+        } else if (assistComponent != null && !assistComponent.isEmpty()) {
+            source = SystemAssistantState.SOURCE_ASSIST_COMPONENT;
+        } else {
+            source = SystemAssistantState.SOURCE_NONE;
+        }
+        return new SystemAssistantState(roleHolder, vis, assistComponent, label,
+            available, source);
     }
 
     private String loadLabel(Context context, String packageName) {
@@ -130,7 +150,18 @@ public final class AssistantResolver {
                 ErrorCodes.ROLE_MISMATCH, "selected assistant became active VIS");
         }
 
+        // 资格强校验（Issue #1）：必须仍声明 VoiceInteractionService 且要求
+        // BIND_VOICE_INTERACTION；仅响应 ACTION_ASSIST 的普通应用不具备资格。
+        boolean hasVis = hasEligibleVoiceInteractionService(pm, pkg);
+        if (!hasVis) {
+            return ResolveOutcome.failure(LaunchResult.RESOLVE_FAILED,
+                ErrorCodes.ASSISTANT_NOT_ELIGIBLE,
+                "no VoiceInteractionService with BIND_VOICE_INTERACTION");
+        }
+
         String storedComponent = snapshot.selectedComponent;
+        String entryComponent;
+        String entryMethod;
         String scanEntry = null;
         String scanMethod = null;
 
@@ -148,14 +179,6 @@ public final class AssistantResolver {
             }
         }
 
-        boolean hasVis = hasEligibleVoiceInteractionService(pm, pkg);
-        if (scanEntry == null && !hasVis) {
-            return ResolveOutcome.failure(LaunchResult.RESOLVE_FAILED,
-                ErrorCodes.ASSISTANT_NOT_ELIGIBLE, null);
-        }
-
-        String entryComponent;
-        String entryMethod;
         if (scanEntry != null) {
             entryComponent = scanEntry;
             entryMethod = scanMethod;

@@ -6,7 +6,8 @@ import java.util.List;
 /**
  * ROLE_ASSISTANT 持有者读取辅助。
  * 不同 API 级别上 RoleManager#getRoleHolders 的签名存在差异，
- * 这里用反射做签名兼容，任何失败都返回 null（调用方退化到 VIS 交叉验证）。
+ * 这里按方法名扫描全部 public 重载做签名兼容，任何失败都返回 null
+ * （调用方退化到 VIS / 助手组件交叉验证）。
  * 纯 Java 实现，双端（system_server Hook 侧与 App 侧）均可使用。
  */
 public final class RoleHolders {
@@ -38,18 +39,21 @@ public final class RoleHolders {
     }
 
     private static Object invokeGetRoleHolders(Object roleManager, Object userHandle) {
-        try {
-            Method oneArg = roleManager.getClass().getMethod("getRoleHolders", String.class);
-            return oneArg.invoke(roleManager, ROLE_NAME);
-        } catch (Throwable ignored) {
-            // 尝试带 UserHandle 的重载
-        }
-        if (userHandle != null) {
+        for (Method method : roleManager.getClass().getMethods()) {
+            if (!"getRoleHolders".equals(method.getName())) {
+                continue;
+            }
+            Class<?>[] params = method.getParameterTypes();
             try {
-                Method twoArg = roleManager.getClass()
-                    .getMethod("getRoleHolders", String.class, userHandle.getClass());
-                return twoArg.invoke(roleManager, ROLE_NAME, userHandle);
+                if (params.length == 1 && params[0] == String.class) {
+                    return method.invoke(roleManager, ROLE_NAME);
+                }
+                if (params.length == 2 && params[0] == String.class
+                    && params[1].isInstance(userHandle)) {
+                    return method.invoke(roleManager, ROLE_NAME, userHandle);
+                }
             } catch (Throwable ignored) {
+                // 继续尝试下一个重载
             }
         }
         return null;
