@@ -80,6 +80,7 @@ shared 层（双端共用，纯 Java）
 - **运行态**：system_server 以显式 `bindServiceAsUser` 连接 `RuntimeStatusService`，Binder 事务只接受 UID 1000；App 诊断页发起 ping，回调返回编译期模块版本、加载时间、`processName=system_server`、框架信息、Hook 阶段/安装状态和当前助手状态。官方 `libxposed/service` 负责 App↔框架监听与 Remote Preferences；这个窄 Binder 仅承载 system_server 运行态，不取代官方服务。
 - **生命周期**：`MODULE_LOADED → SYSTEM_SERVER_STARTING → SYSTEM_CONTEXT_READY → HOOK_CLASS_FOUND → HOOK_METHOD_FOUND → HOOK_INSTALLED → RUNTIME_BINDER_BIND_* → STATE_CHANNEL_READY → POWER_ASSIST_0X3F3_MATCHED` 分别记录；App 侧另记录 listener 注册、服务绑定、Remote Preferences 打开/写入、reconcile 与 Binder ping；缺失上下文、类/方法、安装或通道失败使用独立失败状态；安装成功但尚未收到 `0x3F3` 时显示 `POWER_ASSIST_NOT_MATCHED`。
 - **日志**：Hook 侧生成轻量 LogEvent（字段见开发书 8.3）→ Binder 推送给 App Service → Room 落库；关键 App/system_server 阶段同时写入最多 50 条本地 Debug 环形缓冲，诊断页可复制完整快照。旧显式组件广播只作为 Binder 不可用时的降级通道，API 34+ 使用 `BroadcastOptions.setShareIdentityEnabled(true)`，接收器记录真实 sender UID/package。systemReady 之前事件保留在内存队列（上限 64 条）。热路径内无 Room/SQLite、无网络、无 sleep/轮询。
+- **App 服务状态**：Debug 环形缓冲同时维护 `REGISTERING → REGISTERED → BOUND` 状态机；若 listener 注册成功但 `onServiceBind` 未触发，诊断页直接显示 `registered_but_not_bound` 与等待时长；注册异常保留异常类型和 message。
 - **敏感数据**：日志不存储语音正文、屏幕内容、账户信息、Token；详细诊断模式只追加类名、方法名、Intent、ComponentName 与异常摘要。
 
 ## 3. Xposed 元数据

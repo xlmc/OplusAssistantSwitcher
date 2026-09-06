@@ -41,23 +41,19 @@ public final class RuntimeStatusService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_BIND,
-            "runtime_service", "onCreate");
+        Log.i(TAG, "RuntimeStatusService created");
     }
 
     @Override
     public void onDestroy() {
         systemServerCallback = null;
         lastPingFailure = "service destroyed";
-        RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_DIED,
-            "runtime_service", "onDestroy");
+        Log.i(TAG, "RuntimeStatusService destroyed");
         super.onDestroy();
     }
 
     @Override
     public IBinder onBind(Intent intent) {
-        RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_BIND,
-            "runtime_service", "onBind action=" + (intent == null ? "null" : intent.getAction()));
         return binder;
     }
 

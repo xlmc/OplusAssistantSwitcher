@@ -90,6 +90,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
             AssistApp.refreshRuntime(this);
             RuntimeStatusStore.Snapshot runtime = RuntimeStatusStore.current(this);
             ConfigStore.Status config = ConfigStore.status(this);
+            RuntimeDebugStore.AppLifecycleSnapshot appLifecycle =
+                RuntimeDebugStore.appLifecycle(this);
             String device = getString(R.string.diagnostics_android) + ": "
                 + android.os.Build.VERSION.RELEASE + " (API "
                 + android.os.Build.VERSION.SDK_INT + ")"
@@ -98,7 +100,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 + "\n" + getString(R.string.diagnostics_model) + ": "
                 + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL;
 
-            String service = describeService();
+            String service = describeService(appLifecycle);
 
             String hookStatus = HookStateStore.status(this);
             String hook;
@@ -396,22 +398,40 @@ public class DiagnosticsActivity extends AppCompatActivity {
         }
     }
 
-    private String describeService() {
+    private String describeService(RuntimeDebugStore.AppLifecycleSnapshot lifecycle) {
         io.github.libxposed.service.XposedService s = AssistApp.service();
+        StringBuilder sb = new StringBuilder();
         if (s == null) {
-            return getString(R.string.diagnostics_service_unbound);
+            sb.append(getString(R.string.diagnostics_service_unbound));
         }
         try {
-            StringBuilder sb = new StringBuilder();
-            sb.append(getString(R.string.diagnostics_service_bound));
-            sb.append("\nframework=").append(s.getFrameworkName())
-                .append(" ").append(s.getFrameworkVersion());
-            sb.append("\napi=").append(s.getApiVersion());
-            sb.append("\nscope=").append(String.valueOf(s.getScope()));
-            return sb.toString();
+            if (s != null) {
+                sb.setLength(0);
+                sb.append(getString(R.string.diagnostics_service_bound));
+                sb.append("\nframework=").append(s.getFrameworkName())
+                    .append(" ").append(s.getFrameworkVersion());
+                sb.append("\napi=").append(s.getApiVersion());
+                sb.append("\nscope=").append(String.valueOf(s.getScope()));
+            }
         } catch (Throwable t) {
-            return getString(R.string.diagnostics_service_bound)
-                + "\n" + t.getClass().getSimpleName();
+            RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_BIND,
+                "diagnostics_service_query", "framework metadata query failed", t);
+            sb.append("\nmetadataError=").append(t.getClass().getName())
+                .append(": ").append(t.getMessage());
         }
+        sb.append("\nlistenerStage=").append(orDash(lifecycle.stage))
+            .append("\nlistenerStatus=").append(orDash(lifecycle.status))
+            .append("\nlastAppEvent=").append(orDash(lifecycle.lastEvent))
+            .append("\nwaitDurationMs=").append(lifecycle.waitDurationMs);
+        if (s == null && "REGISTERED".equals(lifecycle.status)) {
+            sb.append("\nstate=registered_but_not_bound");
+        }
+        if ("FAILED".equals(lifecycle.status)) {
+            sb.append("\nstate=registration_failed");
+        }
+        if (!lifecycle.error.isEmpty()) {
+            sb.append("\nlastAppError=").append(lifecycle.error);
+        }
+        return sb.toString();
     }
 }
