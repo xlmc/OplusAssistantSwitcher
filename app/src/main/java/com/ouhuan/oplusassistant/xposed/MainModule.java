@@ -2,6 +2,7 @@ package com.ouhuan.oplusassistant.xposed;
 
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.util.Log;
 
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
@@ -46,12 +47,11 @@ public class MainModule extends XposedModule {
                 detach();
                 return;
             }
-            captureLoadedModuleVersion();
             reporter.hookEvent(Constants.EV_MODULE_LOADED,
                 "process=" + param.getProcessName()
                     + ", framework=" + getFrameworkName() + " " + getFrameworkVersion()
                     + ", api=" + getApiVersion()
-                    + ", moduleVersion=" + moduleVersionSummary());
+                    + ", scope=system");
         } catch (Throwable t) {
             safeLog("onModuleLoaded failed", t);
         }
@@ -61,17 +61,16 @@ public class MainModule extends XposedModule {
     public void onSystemServerStarting(XposedModuleInterface.SystemServerStartingParam param) {
         try {
             ClassLoader classLoader = param.getClassLoader();
-            if (moduleLoadedAt == 0L) {
-                captureLoadedModuleVersion();
-            }
             if (reporter == null) {
                 reporter = new DiagnosticReporter(this);
             }
-            reporter.hookEvent(Constants.EV_SYSTEM_SERVER_READY, null);
 
             contextProvider = new ContextProvider();
             reporter.setContextProvider(contextProvider);
             contextProvider.captureEarly();
+            captureLoadedModuleVersion();
+            reporter.hookEvent(Constants.EV_SYSTEM_SERVER_READY,
+                "moduleVersion=" + moduleVersionSummary());
             contextProvider.installCaptureHook(this, classLoader);
             // Issue #1 P0 诊断点：确认 system context 是否捕获成功
             log(Log.INFO, TAG, "system context captured = " + (contextProvider.get() != null));
@@ -95,6 +94,9 @@ public class MainModule extends XposedModule {
             Context context = contextProvider == null ? null : contextProvider.get();
             if (context == null || resolver == null) {
                 return;
+            }
+            if (moduleLoadedAt == 0L) {
+                captureLoadedModuleVersion();
             }
             CurrentAssistantState current = resolver.readCurrentOplusAssistant(context);
             List<AssistantCandidate> candidates = resolver.scanCandidates(context);
@@ -128,16 +130,22 @@ public class MainModule extends XposedModule {
         }
     }
 
-    /** 从模块自身 ApplicationInfo 读取实际加载到 system_server 的版本。 */
+    /** 从 system_server 可用的 PackageManager 读取模块自身的实际版本。 */
     private void captureLoadedModuleVersion() {
-        moduleLoadedAt = System.currentTimeMillis();
         try {
-            ApplicationInfo info = getModuleApplicationInfo();
-            if (info == null) {
+            Context context = contextProvider == null ? null : contextProvider.get();
+            ApplicationInfo applicationInfo = getModuleApplicationInfo();
+            if (context == null || applicationInfo == null
+                || applicationInfo.packageName == null
+                || applicationInfo.packageName.isEmpty()) {
                 return;
             }
-            loadedModuleVersionName = info.versionName == null ? "" : info.versionName.trim();
-            loadedModuleVersionCode = info.getLongVersionCode();
+            PackageInfo packageInfo = context.getPackageManager()
+                .getPackageInfo(applicationInfo.packageName, 0);
+            loadedModuleVersionName = packageInfo.versionName == null
+                ? "" : packageInfo.versionName.trim();
+            loadedModuleVersionCode = packageInfo.getLongVersionCode();
+            moduleLoadedAt = System.currentTimeMillis();
         } catch (Throwable t) {
             loadedModuleVersionName = "";
             loadedModuleVersionCode = ModuleVersionState.UNKNOWN_VERSION_CODE;
