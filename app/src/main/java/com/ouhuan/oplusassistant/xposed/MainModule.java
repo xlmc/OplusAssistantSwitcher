@@ -124,6 +124,9 @@ public class MainModule extends XposedModule {
 
     private void onAmsSystemReady() {
         try {
+            if (runtimeBridge != null && contextProvider != null) {
+                runtimeBridge.retry(contextProvider);
+            }
             if (reporter != null) {
                 reporter.hookEvent(Constants.EV_AMS_SYSTEM_READY,
                     "ActivityManagerService.systemReady completed");

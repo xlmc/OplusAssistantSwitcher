@@ -132,6 +132,20 @@ public final class RuntimeStatusBridge {
         return fallback;
     }
 
+    /** systemReady 后重试一次早期可能因 PackageManager 尚未就绪而失败的绑定。 */
+    public void retry(ContextProvider provider) {
+        synchronized (lock) {
+            if (!fallback || appService != null) {
+                return;
+            }
+            fallback = false;
+            bindAttempted = false;
+            state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
+                RuntimeStatusContract.CHANNEL_WAITING);
+        }
+        start(provider);
+    }
+
     /** 发送 Hook/调用事件；未连接时排队，通道明确失败时让调用方走广播降级。 */
     public boolean publishEvent(LogEvent event) {
         if (event == null) {
