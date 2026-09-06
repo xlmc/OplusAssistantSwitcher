@@ -15,9 +15,8 @@ import io.github.libxposed.api.XposedInterface;
 
 /**
  * 轻量日志事件的缓冲与异步上报（开发书 8.4）。
- * system_server 触发热路径内绝不写 Room/SQLite：事件要么立即广播给模块 App，
- * 要么进入内存缓冲，待 ActivityManagerService.systemReady 后补发。
- * 广播不可达时降级写入 Xposed 模块日志。
+ * system_server 触发热路径内绝不写 Room/SQLite：事件优先经 Binder 推送给模块 App，
+ * 通道未就绪时进入运行态队列；Binder 不可用时降级为显式广播，再失败则写 Xposed 日志。
  */
 public final class DiagnosticReporter {
 

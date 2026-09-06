@@ -19,9 +19,9 @@ import io.github.libxposed.api.XposedModuleInterface;
  * libxposed API 102 入口（开发书 4.1 / 6.1）。
  * 仅识别目标进程并安装 ColorOS16 策略；非 system_server 进程立即 detach。
  *
- * Issue #1 评论 4：以 system_server 上下文解析「当前手机实际助手」
- * （CurrentOplusAssistant）并经状态广播回传 App；上报时机为
- * AMS.systemReady 与每次 0x3F3 路由完成后。
+ * Issue #1：以 system_server 上下文解析「当前手机实际助手」
+ * （CurrentOplusAssistant）并经运行态 Binder 回传 App；旧状态广播只作降级通道，
+ * 上报时机为 AMS.systemReady 与每次 0x3F3 路由完成后。
  */
 public class MainModule extends XposedModule {
 
