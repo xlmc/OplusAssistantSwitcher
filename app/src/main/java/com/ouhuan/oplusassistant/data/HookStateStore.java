@@ -33,7 +33,7 @@ public final class HookStateStore {
             || Constants.EV_HOOK_CLASS_NOT_FOUND.equals(event.event)
             || Constants.EV_HOOK_METHOD_NOT_FOUND.equals(event.event)
             || Constants.EV_HOOK_INSTALL_FAILED.equals(event.event)
-            || Constants.EV_ROM_UNSUPPORTED.equals(event.event));
+            || Constants.EV_ROM_UNSUPPORTED.equals(event.event);
         SharedPreferences.Editor editor = context.getApplicationContext()
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_STATUS, orDash(event.event))
