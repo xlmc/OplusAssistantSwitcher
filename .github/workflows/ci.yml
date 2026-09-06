@@ -24,21 +24,27 @@ jobs:
       - name: Install Android SDK platform 37 (required by libxposed 102.0.0)
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0"
 
       - name: Build debug APK (compile + lint + unit tests)
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug lintDebug testDebugUnitTest --stacktrace
 
-      - name: Verify Xposed metadata (java_init.list / module.prop / scope.list)
+      - name: Rename debug APK with version
         run: |
-          APK="$(ls app/build/outputs/apk/debug/*.apk | head -n 1)"
-          bash .github/scripts/verify_xposed_meta.sh "$APK"
+          VERSION="$(./gradlew -q :app:printVersionName --console=plain | tail -n 1)"
+          APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
+          APK_DST="app/build/outputs/apk/debug/OplusAssistantSwitcher-v${VERSION}-debug.apk"
+          mv "$APK_SRC" "$APK_DST"
+          echo "APK=$APK_DST" >> "$GITHUB_ENV"
+
+      - name: Verify Xposed metadata (java_init.list / module.prop / scope.list)
+        run: bash .github/scripts/verify_xposed_meta.sh "$APK"
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event_name == 'pull_request' && format('OplusAssistantSwitcher-debug-PR{0}', github.event.number) || 'OplusAssistantSwitcher-debug' }}
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.APK }}
           if-no-files-found: error

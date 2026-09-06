@@ -65,7 +65,7 @@ jobs:
       - name: Install Android SDK platform 37 (required by libxposed 102.0.0)
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0"
 
       - name: Build signed release APK
         env:
@@ -84,15 +84,24 @@ jobs:
             -PreleaseKeyAlias="$KEY_ALIAS" \
             -PreleaseKeyPassword="$KEY_PASSWORD"
 
+      - name: Stage release artifacts with versioned names
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p dist
+          mv app/build/outputs/apk/release/app-release.apk \
+            "dist/OplusAssistantSwitcher-v${VERSION}.apk"
+          APK="dist/OplusAssistantSwitcher-v${VERSION}.apk"
+          [ -f "$APK" ] || { echo "::error::Release APK missing: $APK"; ls -la app/build/outputs/apk/release/; exit 1; }
+
       - name: Verify signature and versionName against tag
         env:
           VERSION: ${{ steps.ver.outputs.version }}
           CODE: ${{ steps.ver.outputs.code }}
         run: |
-          APK="app/build/outputs/apk/release/OplusAssistantSwitcher-v${VERSION}.apk"
-          [ -f "$APK" ] || { echo "::error::Release APK missing or misnamed: $APK"; ls -la app/build/outputs/apk/release/; exit 1; }
+          APK="dist/OplusAssistantSwitcher-v${VERSION}.apk"
           BUILD_TOOLS="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools/"* | sort -V | tail -n 1)"
-          "$BUILD_TOOLS/apksigner" verify --verbose "$APK" >/dev/null \
+          "$BUILD_TOOLS/apksigner" verify "$APK" \
             || { echo "::error::APK signature verification failed"; exit 1; }
           BADGING="$("$BUILD_TOOLS/aapt2" dump badging "$APK")"
           echo "$BADGING" | grep -a "^package: " | grep -aq "versionName='${VERSION}'" \
@@ -105,15 +114,12 @@ jobs:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           bash .github/scripts/verify_xposed_meta.sh \
-            "app/build/outputs/apk/release/OplusAssistantSwitcher-v${VERSION}.apk"
+            "dist/OplusAssistantSwitcher-v${VERSION}.apk"
 
       - name: Generate SHA-256 checksum
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          mkdir -p dist
-          APK="app/build/outputs/apk/release/OplusAssistantSwitcher-v${VERSION}.apk"
-          cp "$APK" "dist/OplusAssistantSwitcher-v${VERSION}.apk"
           sha256sum "dist/OplusAssistantSwitcher-v${VERSION}.apk" \
             > "dist/OplusAssistantSwitcher-v${VERSION}.apk.sha256"
           cat "dist/OplusAssistantSwitcher-v${VERSION}.apk.sha256"

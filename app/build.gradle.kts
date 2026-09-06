@@ -1,5 +1,3 @@
-import com.android.build.gradle.internal.api.BaseVariantOutputImpl
-
 plugins {
     id("com.android.application")
 }
@@ -76,14 +74,12 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
+}
 
-    applicationVariants.all {
-        val baseName = "OplusAssistantSwitcher-v${versionName}"
-        outputs.all {
-            val output = this as BaseVariantOutputImpl
-            output.outputFileName =
-                if (name == "release") "$baseName.apk" else "$baseName-debug.apk"
-        }
+// CI 读取版本号用于按规范重命名产物
+tasks.register("printVersionName") {
+    doLast {
+        println(android.defaultConfig.versionName)
     }
 }
 
