@@ -30,7 +30,7 @@ public class LogEntryReceiver extends BroadcastReceiver {
         if (intent == null || intent.getAction() == null) {
             return;
         }
-        if (!isTrustedSender(intent)) {
+        if (!isTrustedSender()) {
             return;
         }
         Bundle extras = intent.getExtras();
@@ -81,13 +81,13 @@ public class LogEntryReceiver extends BroadcastReceiver {
      * API 34+ 直接校验真实发送方；更低版本依赖接收器上的 signature 级权限
      * （未持有权限的第三方发送者在 AMS 层即被拒绝）。
      */
-    private static boolean isTrustedSender(Intent intent) {
+    private boolean isTrustedSender() {
         if (Build.VERSION.SDK_INT >= 34) {
-            int sentFromUid = intent.getSentFromUid();
+            int sentFromUid = getSentFromUid();
             if (sentFromUid == Process.SYSTEM_UID || sentFromUid == Process.myUid()) {
                 return true;
             }
-            String sentFromPackage = intent.getSentFromPackage();
+            String sentFromPackage = getSentFromPackage();
             return Constants.MODULE_PACKAGE.equals(sentFromPackage);
         }
         return true;

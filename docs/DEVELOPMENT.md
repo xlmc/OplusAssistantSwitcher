@@ -75,7 +75,7 @@ shared 层（双端共用，纯 Java）
 ### 2.3 配置与日志链路
 
 - **配置**：App 通过 `XposedService.getRemotePreferences("ouhuan_config")` 写入；Hook 侧 `XposedInterface.getRemotePreferences()` 只读同步，每次触发刷新一次快照并缓存。读取失败一律视为「模块未启用」。
-- **日志**：Hook 侧生成轻量 LogEvent（字段见开发书 8.3）→ 显式包名广播送达 App 的 `LogEntryReceiver`（exported=false，仅 system uid 可达）→ Room 落库。systemReady 之前广播通道不可用，事件先入内存缓冲（上限 64 条）由 AMS.systemReady 后补发。热路径内无 Room/SQLite、无网络、无 sleep/轮询。
+- **日志**：Hook 侧生成轻量 LogEvent（字段见开发书 8.3）→ 显式组件广播送达 App 的 `LogEntryReceiver`（`exported=true` + signature 级权限；API 34+ 再校验 system/module 发送方）→ Room 落库。systemReady 之前广播通道不可用，事件先入内存缓冲（上限 64 条）由 AMS.systemReady 后补发。热路径内无 Room/SQLite、无网络、无 sleep/轮询。
 - **敏感数据**：日志不存储语音正文、屏幕内容、账户信息、Token；详细诊断模式只追加类名、方法名、Intent、ComponentName 与异常摘要。
 
 ## 3. Xposed 元数据
