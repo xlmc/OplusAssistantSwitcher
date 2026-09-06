@@ -6,7 +6,10 @@ import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.provider.Settings;
+import android.util.Log;
 
+import com.ouhuan.oplusassistant.data.RuntimeDebugStore;
+import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.RoleHolders;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
@@ -20,6 +23,8 @@ import com.ouhuan.oplusassistant.shared.SystemAssistantState;
  */
 public final class SystemAssistantReader {
 
+    private static final String TAG = "OplusAssistant";
+
     public SystemAssistantState read(Context context) {
         String roleHolder = null;
         try {
@@ -30,7 +35,8 @@ public final class SystemAssistantReader {
                     android.os.Process.myUserHandle());
             }
         } catch (Throwable ignored) {
-            // ROM 限制时退化到 VIS 读取
+            reportFailure(context, "role_holder_query", ignored,
+                "RoleManager query failed; fallback to VIS");
         }
         String vis = readSecure(context, "voice_interaction_service");
         String powerKeyComponent = readSecure(context, "assistant");
@@ -66,6 +72,7 @@ public final class SystemAssistantReader {
             String value = Settings.Secure.getString(context.getContentResolver(), key);
             return value == null ? "" : value.trim();
         } catch (Throwable t) {
+            reportFailure(context, "secure_setting_query", t, "key=" + key);
             return "";
         }
     }
@@ -76,8 +83,18 @@ public final class SystemAssistantReader {
             ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
             return String.valueOf(pm.getApplicationLabel(info));
         } catch (Throwable t) {
+            reportFailure(context, "application_label_query", t,
+                "package=" + packageName);
             return "";
         }
+    }
+
+    private void reportFailure(Context context, String stage, Throwable error,
+                               String summary) {
+        RuntimeDebugStore.append(context, "app", Constants.EV_RESOLVER_QUERY_FAILED, stage,
+            summary, error);
+        Log.w(TAG, "System assistant query failed at " + stage + ": "
+            + error.getClass().getName() + ": " + error.getMessage(), error);
     }
 
     private String packageOf(String flattened) {

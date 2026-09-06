@@ -163,7 +163,6 @@ public final class AssistantResolver {
         try {
             List<ResolveInfo> services = pm.queryIntentServices(
                 new Intent(Constants.VIS_SERVICE_INTERFACE), PackageManager.GET_META_DATA);
-            ResolveInfo fallback = null;
             for (ResolveInfo info : services) {
                 ServiceInfo service = info == null ? null : info.serviceInfo;
                 if (service == null || service.packageName == null) {
@@ -178,11 +177,10 @@ public final class AssistantResolver {
                 if (isAppEnabled(pm, service.packageName)) {
                     return info;
                 }
-                if (fallback == null) {
-                    fallback = info;
-                }
             }
-            return fallback;
+            // 禁用的 OEM VoiceInteractionService 不是当前实际助手，不能把它
+            // 显示成系统默认助手；标准 ROLE/VIS 读取会在下方继续兜底。
+            return null;
         } catch (Throwable t) {
             reportFailure("current_oem_voice_service_query", t);
             return null;

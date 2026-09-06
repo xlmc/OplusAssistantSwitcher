@@ -6,10 +6,12 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
+import android.util.Log;
 
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
+import com.ouhuan.oplusassistant.data.RuntimeDebugStore;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,6 +37,8 @@ import java.util.Set;
  * 当前电源键原始目标。不使用任何固定第三方包名白名单。
  */
 public final class AssistantScanner {
+
+    private static final String TAG = "OplusAssistant";
 
     public static final String TAG_VIS = "VOICE_INTERACTION_SERVICE";
     public static final String TAG_ROLE = "ROLE_ASSISTANT";
@@ -62,6 +66,8 @@ public final class AssistantScanner {
                 }
             }
         } catch (Throwable ignored) {
+            reportFailure(context, "candidate_vis_query", ignored,
+                "queryIntentServices failed");
         }
 
         // 1b/1c. ROLE_ASSISTANT 持有者与系统已配置助手组件
@@ -85,14 +91,14 @@ public final class AssistantScanner {
             }
 
             // ---- 3) 已安装 / 启用 ----
-            if (!isAppEnabled(pm, pkg)) {
+            if (!isAppEnabled(context, pm, pkg)) {
                 continue;
             }
 
             // ---- 4) 入口解析验证（ACTION_ASSIST_VERIFIED） ----
-            EntryResult entry = findEntry(pm, Intent.ACTION_ASSIST, pkg);
+            EntryResult entry = findEntry(context, pm, Intent.ACTION_ASSIST, pkg);
             if (entry == null) {
-                entry = findEntry(pm, Intent.ACTION_VOICE_COMMAND, pkg);
+                entry = findEntry(context, pm, Intent.ACTION_VOICE_COMMAND, pkg);
             }
             if (entry == null) {
                 // 无可实际调用的 Assistant 入口：不展示
@@ -110,7 +116,7 @@ public final class AssistantScanner {
             eligibility.append(" + ").append(TAG_ENTRY_VERIFIED);
             // UI 显示名：入口组件自身 label 优先（如 Gemini），应用名兜底；
             // 不用包名决定产品名（Issue #1 评论 4）
-            String label = entry.label.isEmpty() ? loadLabel(pm, pkg) : entry.label;
+            String label = entry.label.isEmpty() ? loadLabel(context, pm, pkg) : entry.label;
             result.add(new AssistantCandidate(pkg, label, entry.component, entry.method,
                 tags.contains(TAG_VIS), eligibility.toString()));
         }
@@ -148,16 +154,19 @@ public final class AssistantScanner {
                 return true;
             }
         }
-        if (isVendorOriginalTarget(pm, pkg, system.roleHolderPackage)
-            || isVendorOriginalTarget(pm, pkg, packagePart(system.voiceInteractionService))
-            || isVendorOriginalTarget(pm, pkg, packagePart(system.assistComponent))) {
+        if (isVendorOriginalTarget(context, pm, pkg, system.roleHolderPackage)
+            || isVendorOriginalTarget(context, pm, pkg,
+                packagePart(system.voiceInteractionService))
+            || isVendorOriginalTarget(context, pm, pkg,
+                packagePart(system.assistComponent))) {
             return true;
         }
         return false;
     }
 
     /** 系统预装且担任当前助手 → 厂商原始目标；第三方应用不受影响。 */
-    private boolean isVendorOriginalTarget(PackageManager pm, String pkg, String currentPkg) {
+    private boolean isVendorOriginalTarget(Context context, PackageManager pm,
+                                           String pkg, String currentPkg) {
         if (currentPkg == null || currentPkg.isEmpty() || !currentPkg.equals(pkg)) {
             return false;
         }
@@ -166,15 +175,19 @@ public final class AssistantScanner {
             return (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
                 && (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
         } catch (Throwable t) {
+            reportFailure(context, "vendor_original_target_query", t,
+                "package=" + pkg);
             return false;
         }
     }
 
-    private boolean isAppEnabled(PackageManager pm, String pkg) {
+    private boolean isAppEnabled(Context context, PackageManager pm, String pkg) {
         try {
             ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
             return info.enabled;
         } catch (Throwable t) {
+            reportFailure(context, "application_enabled_query", t,
+                "package=" + pkg);
             return false;
         }
     }
@@ -192,7 +205,8 @@ public final class AssistantScanner {
         }
     }
 
-    private EntryResult findEntry(PackageManager pm, String action, String pkg) {
+    private EntryResult findEntry(Context context, PackageManager pm, String action,
+                                  String pkg) {
         try {
             Intent intent = new Intent(action);
             intent.setPackage(pkg);
@@ -210,17 +224,30 @@ public final class AssistantScanner {
                     label == null ? "" : String.valueOf(label), method);
             }
         } catch (Throwable ignored) {
+            reportFailure(context, "assistant_entry_query", ignored,
+                "action=" + action + ",package=" + pkg);
         }
         return null;
     }
 
-    private String loadLabel(PackageManager pm, String pkg) {
+    private String loadLabel(Context context, PackageManager pm, String pkg) {
         try {
             ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-            return String.valueOf(pm.getApplicationLabel(info));
+            CharSequence label = pm.getApplicationLabel(info);
+            return label == null ? "" : String.valueOf(label);
         } catch (Throwable t) {
+            reportFailure(context, "application_label_query", t,
+                "package=" + pkg);
             return pkg;
         }
+    }
+
+    private void reportFailure(Context context, String stage, Throwable error,
+                               String summary) {
+        RuntimeDebugStore.append(context, "app", Constants.EV_RESOLVER_QUERY_FAILED,
+            stage, summary, error);
+        Log.w(TAG, "Assistant candidate query failed at " + stage + ": "
+            + error.getClass().getName() + ": " + error.getMessage(), error);
     }
 
     private String packagePart(String flattened) {

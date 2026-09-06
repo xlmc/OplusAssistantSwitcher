@@ -76,6 +76,8 @@ public final class RuntimeStatusStore {
     public static void updateFramework(Context context, XposedService service) {
         SharedPreferences.Editor editor = prefs(context).edit();
         if (service == null) {
+            // KEY_PEER_* 描述独立的 system_server ↔ App 运行态 Binder，不能因为
+            // 官方 XposedService 断开就清空；两条连接的生命周期并不相同。
             editor.putBoolean(KEY_FRAMEWORK_CONNECTED, false)
                 .putString(RuntimeStatusContract.KEY_FRAMEWORK_NAME, "")
                 .putString(RuntimeStatusContract.KEY_FRAMEWORK_VERSION, "")
@@ -89,8 +91,6 @@ public final class RuntimeStatusStore {
                 .putLong(RuntimeStatusContract.KEY_FRAMEWORK_TARGET_VERSION_CODE,
                     Constants.UNKNOWN_VERSION_CODE)
                 .putLong(RuntimeStatusContract.KEY_FRAMEWORK_TARGET_PID, 0L)
-                .putLong(RuntimeStatusContract.KEY_PEER_UID, -1L)
-                .putString(RuntimeStatusContract.KEY_PEER_PROCESS, "")
                 .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
                 .apply();
             return;
