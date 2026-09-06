@@ -1,4 +1,4 @@
-﻿package com.ouhuan.oplusassistant.shared;
+package com.ouhuan.oplusassistant.shared;
 
 /**
  * 欧唤全局常量。本类必须保持纯 Java（仅 java.* 依赖），
