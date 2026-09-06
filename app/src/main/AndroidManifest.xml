@@ -58,6 +58,11 @@
             android:exported="false"
             android:label="@string/settings_title" />
 
+        <!-- Issue #1 P0：system_server 运行态主通道；Binder 事务在代码内只接受 uid 1000。 -->
+        <service
+            android:name=".app.RuntimeStatusService"
+            android:exported="true" />
+
         <receiver
             android:name=".data.LogEntryReceiver"
             android:exported="true"

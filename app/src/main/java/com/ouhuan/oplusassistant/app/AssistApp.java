@@ -1,6 +1,11 @@
 package com.ouhuan.oplusassistant.app;
 
 import android.app.Application;
+import android.content.Context;
+import android.os.Bundle;
+
+import com.ouhuan.oplusassistant.data.AppExecutors;
+import com.ouhuan.oplusassistant.data.RuntimeStatusStore;
 
 import io.github.libxposed.service.XposedService;
 import io.github.libxposed.service.XposedServiceHelper;
@@ -30,12 +35,35 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
     @Override
     public void onServiceBind(XposedService bound) {
         service = bound;
+        Context context = getApplicationContext();
+        AppExecutors.io().execute(() -> {
+            ConfigStore.reconcile(context);
+            refreshRuntime(context);
+        });
     }
 
     @Override
     public void onServiceDied(XposedService died) {
+        boolean wasCurrent = died == service;
         if (died == service) {
             service = null;
+        }
+        if (wasCurrent) {
+            Context context = getApplicationContext();
+            AppExecutors.io().execute(() -> RuntimeStatusStore.updateFramework(context, null));
+        }
+    }
+
+    /** 刷新官方框架握手、system_server 目标及自定义 Binder ping 快照。 */
+    public static void refreshRuntime(Context context) {
+        if (context == null) {
+            return;
+        }
+        XposedService bound = service;
+        RuntimeStatusStore.updateFramework(context, bound);
+        Bundle pong = RuntimeStatusService.pingSystemServer();
+        if (pong != null) {
+            RuntimeStatusService.applyPong(context, pong);
         }
     }
 }

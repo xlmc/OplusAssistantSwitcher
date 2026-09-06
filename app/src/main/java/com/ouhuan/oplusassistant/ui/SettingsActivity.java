@@ -19,6 +19,7 @@ public class SettingsActivity extends AppCompatActivity {
     private SwitchMaterial swEnabled;
     private SwitchMaterial swDetail;
     private TextView tvServiceState;
+    private boolean updating;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,34 +40,53 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         swEnabled.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            boolean remoteOk = ConfigStore.writeEnabled(this, isChecked);
-            updateServiceNote(remoteOk);
+            if (updating) {
+                return;
+            }
+            AppExecutors.io().execute(() -> {
+                ConfigStore.writeEnabled(this, isChecked);
+                ConfigStore.Status status = ConfigStore.status(this);
+                runOnUiThread(() -> updateFromStatus(status));
+            });
         });
         swDetail.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            boolean remoteOk = ConfigStore.writeDetail(this, isChecked);
-            updateServiceNote(remoteOk);
+            if (updating) {
+                return;
+            }
+            AppExecutors.io().execute(() -> {
+                ConfigStore.writeDetail(this, isChecked);
+                ConfigStore.Status status = ConfigStore.status(this);
+                runOnUiThread(() -> updateFromStatus(status));
+            });
         });
 
         findViewById(R.id.btnResetSelection).setOnClickListener(v ->
-            AppExecutors.io().execute(() -> ConfigStore.clearSelection(this)));
+            AppExecutors.io().execute(() -> {
+                ConfigStore.clearSelection(this);
+                ConfigStore.Status status = ConfigStore.status(this);
+                runOnUiThread(() -> updateFromStatus(status));
+            }));
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         AppExecutors.io().execute(() -> {
-            boolean enabled = ConfigStore.isModuleEnabled(this);
-            boolean detail = ConfigStore.isDetailDiagnostics(this);
+            ConfigStore.Status status = ConfigStore.status(this);
             runOnUiThread(() -> {
-                swEnabled.setChecked(enabled);
-                swDetail.setChecked(detail);
-                updateServiceNote(com.ouhuan.oplusassistant.app.AssistApp.service() != null);
+                updateFromStatus(status);
             });
         });
     }
 
-    private void updateServiceNote(boolean remoteOk) {
-        if (remoteOk) {
+    private void updateFromStatus(ConfigStore.Status status) {
+        updating = true;
+        swEnabled.setChecked(status.localDesiredEnabled);
+        swDetail.setChecked(status.localDesiredDetailDiagnostics);
+        updating = false;
+        if (status.syncPending) {
+            tvServiceState.setText(R.string.settings_sync_pending);
+        } else if (status.serviceBound && status.remoteAvailable) {
             tvServiceState.setText(R.string.settings_service_ok);
         } else {
             tvServiceState.setText(R.string.settings_service_unbound);

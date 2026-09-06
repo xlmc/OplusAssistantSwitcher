@@ -16,6 +16,10 @@ import java.util.Locale;
  */
 public final class RuntimeConfig {
 
+    public interface Listener {
+        void onConfigRead(Snapshot snapshot);
+    }
+
     /** 不可变配置快照。 */
     public static final class Snapshot {
         public final boolean enabled;
@@ -36,10 +40,16 @@ public final class RuntimeConfig {
     }
 
     private final XposedInterface xposed;
+    private final Listener listener;
     private volatile Snapshot last;
 
     public RuntimeConfig(XposedInterface xposed) {
+        this(xposed, null);
+    }
+
+    public RuntimeConfig(XposedInterface xposed, Listener listener) {
         this.xposed = xposed;
+        this.listener = listener;
     }
 
     /** 触发时调用：刷新并返回快照；读取失败返回 null（视为未启用）。 */
@@ -47,6 +57,13 @@ public final class RuntimeConfig {
         Snapshot snapshot = readSnapshot();
         if (snapshot != null) {
             last = snapshot;
+            if (listener != null) {
+                try {
+                    listener.onConfigRead(snapshot);
+                } catch (Throwable t) {
+                    safeLog("RuntimeConfig listener failed: " + t);
+                }
+            }
         }
         return snapshot;
     }

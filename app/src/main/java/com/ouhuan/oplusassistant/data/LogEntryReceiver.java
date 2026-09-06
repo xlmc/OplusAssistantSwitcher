@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Process;
+import android.util.Log;
 
 import com.ouhuan.oplusassistant.shared.Constants;
 
@@ -25,12 +26,14 @@ import java.util.Map;
  */
 public class LogEntryReceiver extends BroadcastReceiver {
 
+    private static final String TAG = "OplusAssistantReceiver";
+
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent == null || intent.getAction() == null) {
             return;
         }
-        if (!isTrustedSender()) {
+        if (!isTrustedSender(intent)) {
             return;
         }
         Bundle extras = intent.getExtras();
@@ -81,15 +84,25 @@ public class LogEntryReceiver extends BroadcastReceiver {
      * API 34+ 直接校验真实发送方；更低版本依赖接收器上的 signature 级权限
      * （未持有权限的第三方发送者在 AMS 层即被拒绝）。
      */
-    private boolean isTrustedSender() {
+    private boolean isTrustedSender(Intent intent) {
         if (Build.VERSION.SDK_INT >= 34) {
-            int sentFromUid = getSentFromUid();
-            if (sentFromUid == Process.SYSTEM_UID || sentFromUid == Process.myUid()) {
-                return true;
+            try {
+                int sentFromUid = getSentFromUid();
+                String sentFromPackage = getSentFromPackage();
+                Log.i(TAG, "receive action=" + intent.getAction()
+                    + " senderUid=" + sentFromUid
+                    + " senderPackage=" + (sentFromPackage == null ? "" : sentFromPackage));
+                if (sentFromUid == Process.SYSTEM_UID || sentFromUid == Process.myUid()) {
+                    return true;
+                }
+                return Constants.MODULE_PACKAGE.equals(sentFromPackage);
+            } catch (Throwable t) {
+                Log.w(TAG, "cannot read broadcast sender identity", t);
+                return false;
             }
-            String sentFromPackage = getSentFromPackage();
-            return Constants.MODULE_PACKAGE.equals(sentFromPackage);
         }
+        Log.i(TAG, "receive action=" + intent.getAction()
+            + " senderIdentity=unavailable(api<34)");
         return true;
     }
 }

@@ -13,6 +13,7 @@ import com.ouhuan.oplusassistant.data.AppExecutors;
 import com.ouhuan.oplusassistant.data.AssistantStateStore;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
+import com.ouhuan.oplusassistant.data.RuntimeStatusStore;
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
@@ -42,6 +43,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
     private TextView tvAssistantDetail;
     private TextView tvSystemServer;
     private TextView tvModuleVersion;
+    private TextView tvRuntimeStatus;
+    private TextView tvConfigState;
     private TextView tvCandidates;
     private TextView tvSelection;
     private TextView tvStats;
@@ -59,6 +62,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
         tvAssistantDetail = findViewById(R.id.tvAssistantDetail);
         tvSystemServer = findViewById(R.id.tvSystemServer);
         tvModuleVersion = findViewById(R.id.tvModuleVersion);
+        tvRuntimeStatus = findViewById(R.id.tvRuntimeStatus);
+        tvConfigState = findViewById(R.id.tvConfigState);
         tvCandidates = findViewById(R.id.tvCandidates);
         tvSelection = findViewById(R.id.tvSelection);
         tvStats = findViewById(R.id.tvStats);
@@ -73,6 +78,9 @@ public class DiagnosticsActivity extends AppCompatActivity {
 
     private void refresh() {
         AppExecutors.io().execute(() -> {
+            AssistApp.refreshRuntime(this);
+            RuntimeStatusStore.Snapshot runtime = RuntimeStatusStore.current(this);
+            ConfigStore.Status config = ConfigStore.status(this);
             String device = getString(R.string.diagnostics_android) + ": "
                 + android.os.Build.VERSION.RELEASE + " (API "
                 + android.os.Build.VERSION.SDK_INT + ")"
@@ -86,7 +94,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String hookStatus = HookStateStore.status(this);
             String hook;
             if (hookStatus == null) {
-                hook = getString(R.string.home_hook_not_active);
+                hook = runtime.hookStage.isEmpty()
+                    ? getString(R.string.home_hook_not_active) : runtime.hookStage;
             } else {
                 hook = hookStatus;
                 String summary = HookStateStore.summary(this);
@@ -136,12 +145,17 @@ public class DiagnosticsActivity extends AppCompatActivity {
             }
 
             AppVersion appVersion = readAppVersion();
-            ModuleVersionState serverModule = AssistantStateStore.moduleVersion(this);
+            ModuleVersionState serverModule = runtime.moduleLoadedAt > 0L
+                ? new ModuleVersionState(runtime.moduleVersionName,
+                    runtime.moduleVersionCode, runtime.moduleLoadedAt)
+                : AssistantStateStore.moduleVersion(this);
             ModuleVersionState.Comparison versionComparison = serverModule == null
                 ? ModuleVersionState.Comparison.UNKNOWN
                 : serverModule.compareTo(appVersion.name, appVersion.code);
             String moduleVersion = describeModuleVersion(appVersion, serverModule,
                 versionComparison);
+            String runtimeStatus = describeRuntime(runtime);
+            String configState = describeConfigState(config, runtime);
 
             // 候选清单与每个候选的资格来源（本地扫描 ∪ system_server 上报，仅诊断页展示）
             StringBuilder candidates = new StringBuilder();
@@ -176,7 +190,9 @@ public class DiagnosticsActivity extends AppCompatActivity {
             }
 
             String selection;
-            if (!ConfigStore.isModuleEnabled(this)) {
+            if (config.syncPending) {
+                selection = getString(R.string.settings_sync_pending);
+            } else if (!config.effectiveEnabled()) {
                 selection = getString(R.string.home_module_disabled);
             } else {
                 String pkg = ConfigStore.selectedPackage(this);
@@ -199,6 +215,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String finalAssistantDetail = assistantDetail;
             String finalSystemServer = systemServer;
             String finalModuleVersion = moduleVersion;
+            String finalRuntimeStatus = runtimeStatus;
+            String finalConfigState = configState;
             String finalCandidates = candidates.toString();
             String finalSelection = selection;
             String finalStats = stats;
@@ -210,11 +228,71 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 tvAssistantDetail.setText(finalAssistantDetail);
                 tvSystemServer.setText(finalSystemServer);
                 tvModuleVersion.setText(finalModuleVersion);
+                tvRuntimeStatus.setText(finalRuntimeStatus);
+                tvConfigState.setText(finalConfigState);
                 tvCandidates.setText(finalCandidates);
                 tvSelection.setText(finalSelection);
                 tvStats.setText(finalStats);
             });
         });
+    }
+
+    private String describeRuntime(RuntimeStatusStore.Snapshot runtime) {
+        String targetVersion = runtime.targetLoadedVersionCode < 0
+            ? "-" : String.valueOf(runtime.targetLoadedVersionCode);
+        String loadedAt = runtime.moduleLoadedAt > 0L
+            ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                .format(new Date(runtime.moduleLoadedAt)) : "-";
+        String matchedAt = runtime.powerAssistMatchedAt > 0L
+            ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                .format(new Date(runtime.powerAssistMatchedAt)) : "-";
+        return "channel=" + orDash(runtime.channelState)
+            + "\nprocessName=" + orDash(runtime.processName)
+            + "\nmoduleVersion=" + orDash(runtime.moduleVersionName)
+            + " / versionCode=" + (runtime.moduleVersionCode < 0
+                ? "-" : runtime.moduleVersionCode)
+            + "\nloadedAt=" + loadedAt
+            + "\nframework=" + orDash(runtime.frameworkName)
+            + " " + orDash(runtime.frameworkVersion)
+            + "\nframeworkApi=" + runtime.frameworkApi
+            + "\ntargetProcess=" + orDash(runtime.targetProcess)
+            + "\ntargetState=" + orDash(runtime.targetState)
+            + "\ntargetLoadedVersionCode=" + targetVersion
+            + "\ntargetPid=" + (runtime.targetPid <= 0 ? "-" : runtime.targetPid)
+            + "\ncontextState=" + orDash(runtime.contextState)
+            + "\nhookStrategy=" + orDash(runtime.hookStrategy)
+            + "\nhookStage=" + orDash(runtime.hookStage)
+            + "\nhookStatus=" + orDash(runtime.hookStatus)
+            + "\nhookInstalled=" + HookStateStore.isInstalled(this)
+            + "\npowerAssistStatus=" + orDash(runtime.powerAssistStatus)
+            + "\npowerAssistMatchedAt=" + matchedAt
+            + "\nlastEvent=" + orDash(runtime.lastEvent)
+            + "\neventSequence=" + runtime.eventSequence;
+    }
+
+    private String describeConfigState(ConfigStore.Status config,
+                                       RuntimeStatusStore.Snapshot runtime) {
+        return "localDesired.enabled=" + config.localDesiredEnabled
+            + "\nlocalDesired.detailDiagnostics=" + config.localDesiredDetailDiagnostics
+            + "\nlocalDesired.packageName=" + orDash(config.localDesiredPackage)
+            + "\nlocalDesired.componentName=" + orDash(config.localDesiredComponent)
+            + "\nremotePreferences.available=" + config.remoteAvailable
+            + "\nremotePreferences.enabled=" + (config.remoteAvailable
+                ? String.valueOf(config.remoteEnabled) : "-")
+            + "\nremotePreferences.detailDiagnostics=" + (config.remoteAvailable
+                ? String.valueOf(config.remoteDetailDiagnostics) : "-")
+            + "\nremotePreferences.packageName=" + (config.remoteAvailable
+                ? orDash(config.remoteSelectedPackage) : "-")
+            + "\nremotePreferences.componentName=" + (config.remoteAvailable
+                ? orDash(config.remoteSelectedComponent) : "-")
+            + "\nsyncPending=" + config.syncPending
+            + "\neffectiveEnabled=" + config.effectiveEnabled()
+            + "\nsystem_server.configKnown=" + runtime.configKnown
+            + "\nsystem_server.enabled=" + (runtime.configKnown
+                ? String.valueOf(runtime.configEnabled) : "-")
+            + "\nsystem_server.updatedAt=" + (runtime.configUpdatedAt > 0L
+                ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                    .format(new Date(runtime.configUpdatedAt)) : "-");
     }
 
     private static String orDash(String value) {
@@ -227,7 +305,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String name = info.versionName == null ? "" : info.versionName;
             return new AppVersion(name, info.getLongVersionCode());
         } catch (Throwable t) {
-            return new AppVersion("", ModuleVersionState.UNKNOWN_VERSION_CODE);
+            return new AppVersion("", Constants.UNKNOWN_VERSION_CODE);
         }
     }
 

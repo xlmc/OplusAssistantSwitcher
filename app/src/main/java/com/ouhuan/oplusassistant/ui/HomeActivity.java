@@ -18,6 +18,7 @@ import com.ouhuan.oplusassistant.data.AssistantStateStore;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
 import com.ouhuan.oplusassistant.data.LogEntity;
+import com.ouhuan.oplusassistant.data.RuntimeStatusStore;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
 import com.ouhuan.oplusassistant.shared.LaunchResult;
@@ -98,12 +99,18 @@ public class HomeActivity extends AppCompatActivity {
 
     private void refresh() {
         AppExecutors.io().execute(() -> {
-            boolean enabled = ConfigStore.isModuleEnabled(this);
+            AssistApp.refreshRuntime(this);
+            ConfigStore.Status config = ConfigStore.status(this);
+            boolean enabled = config.effectiveEnabled();
             boolean serviceBound = AssistApp.service() != null;
             String selectedPkg = ConfigStore.selectedPackage(this);
             CurrentAssistantState current = AssistantStateStore.current(this);
             AppVersion appVersion = readAppVersion();
-            ModuleVersionState serverModule = AssistantStateStore.moduleVersion(this);
+            RuntimeStatusStore.Snapshot runtime = RuntimeStatusStore.current(this);
+            ModuleVersionState serverModule = runtime.moduleLoadedAt > 0L
+                ? new ModuleVersionState(runtime.moduleVersionName,
+                    runtime.moduleVersionCode, runtime.moduleLoadedAt)
+                : AssistantStateStore.moduleVersion(this);
             ModuleVersionState.Comparison versionComparison = serverModule == null
                 ? ModuleVersionState.Comparison.UNKNOWN
                 : serverModule.compareTo(appVersion.name, appVersion.code);
@@ -111,11 +118,14 @@ public class HomeActivity extends AppCompatActivity {
             LogEntity last = LogDb.get(this).dao().last();
 
             // ---- 模块状态卡：是否生效 + Hook 次级状态 + 作用域 ----
-            boolean hookOk = Constants.EV_HOOK_INSTALLED.equals(hookStatus)
+            boolean hookOk = HookStateStore.isInstalled(this)
                 && versionComparison == ModuleVersionState.Comparison.MATCH;
             int moduleColor;
             String moduleMain;
-            if (!enabled) {
+            if (config.syncPending) {
+                moduleMain = getString(R.string.home_module_waiting_sync);
+                moduleColor = ContextCompat.getColor(this, R.color.ouhuan_text_body);
+            } else if (!enabled) {
                 moduleMain = getString(R.string.home_module_disabled);
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_red);
             } else if (versionComparison != ModuleVersionState.Comparison.MATCH) {
@@ -124,7 +134,7 @@ public class HomeActivity extends AppCompatActivity {
             } else if (hookOk) {
                 moduleMain = getString(R.string.home_module_active);
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_green);
-            } else if (hookStatus != null) {
+            } else if (hookStatus != null || !runtime.hookStage.isEmpty()) {
                 moduleMain = getString(R.string.home_module_enabled_wait_reboot);
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_text_body);
             } else {
@@ -132,14 +142,19 @@ public class HomeActivity extends AppCompatActivity {
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_red);
             }
             StringBuilder hookSecondary = new StringBuilder();
-            if (versionComparison == ModuleVersionState.Comparison.MISMATCH) {
+            if (config.syncPending) {
+                hookSecondary.append(getString(R.string.home_config_sync_pending));
+            } else if (versionComparison == ModuleVersionState.Comparison.MISMATCH) {
                 hookSecondary.append(getString(R.string.home_hook_old_version));
             } else if (versionComparison == ModuleVersionState.Comparison.UNKNOWN) {
                 hookSecondary.append(getString(R.string.home_hook_version_unknown));
-            } else if (hookStatus == null) {
+            } else if (hookStatus == null && runtime.hookStage.isEmpty()) {
                 hookSecondary.append(getString(R.string.home_hook_status_format,
                     getString(R.string.home_hook_not_active)));
             } else {
+                if (hookStatus == null) {
+                    hookStatus = runtime.hookStage;
+                }
                 hookSecondary.append(getString(R.string.home_hook_status_format,
                     describeHookStatus(hookStatus)));
             }
@@ -241,7 +256,7 @@ public class HomeActivity extends AppCompatActivity {
             String name = info.versionName == null ? "" : info.versionName;
             return new AppVersion(name, info.getLongVersionCode());
         } catch (Throwable t) {
-            return new AppVersion("", ModuleVersionState.UNKNOWN_VERSION_CODE);
+            return new AppVersion("", Constants.UNKNOWN_VERSION_CODE);
         }
     }
 
@@ -284,8 +299,11 @@ public class HomeActivity extends AppCompatActivity {
             case Constants.EV_HOOK_INSTALLED:
                 return getString(R.string.hook_ok);
             case Constants.EV_HOOK_FAILED:
+            case Constants.EV_HOOK_INSTALL_FAILED:
                 return getString(R.string.hook_failed);
             case Constants.EV_HOOK_TARGET_NOT_FOUND:
+            case Constants.EV_HOOK_CLASS_NOT_FOUND:
+            case Constants.EV_HOOK_METHOD_NOT_FOUND:
                 return getString(R.string.hook_target_missing) + "（" + status + "）";
             case Constants.EV_ROM_UNSUPPORTED:
                 return getString(R.string.hook_rom_unsupported) + "（" + status + "）";

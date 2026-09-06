@@ -108,8 +108,13 @@ public final class LogEvent implements Serializable {
     public boolean isFailure() {
         if (Constants.KIND_HOOK.equals(kind)) {
             return Constants.EV_HOOK_FAILED.equals(event)
+                || Constants.EV_HOOK_INSTALL_FAILED.equals(event)
                 || Constants.EV_ROM_UNSUPPORTED.equals(event)
-                || Constants.EV_HOOK_TARGET_NOT_FOUND.equals(event);
+                || Constants.EV_HOOK_TARGET_NOT_FOUND.equals(event)
+                || Constants.EV_HOOK_CLASS_NOT_FOUND.equals(event)
+                || Constants.EV_HOOK_METHOD_NOT_FOUND.equals(event)
+                || Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE.equals(event)
+                || Constants.EV_STATE_CHANNEL_FAILED.equals(event);
         }
         return !LaunchResult.SUCCESS.name().equals(result);
     }

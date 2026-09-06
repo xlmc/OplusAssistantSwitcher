@@ -112,12 +112,16 @@ public final class ColorOS16PowerAssistantHook {
             reporter.hookEvent(Constants.EV_HOOK_INSTALLED,
                 Constants.HOOK_CLASS + "." + Constants.HOOK_METHOD
                     + " what=0x" + Integer.toHexString(Constants.MSG_POWER_ASSIST_0X3F3));
+            reporter.hookEvent(Constants.EV_POWER_ASSIST_NOT_MATCHED,
+                "installed; waiting what=0x"
+                    + Integer.toHexString(Constants.MSG_POWER_ASSIST_0X3F3));
         } catch (ClassNotFoundException | NoSuchMethodException e) {
             // 厂商类/方法随 ROM 更新变化：不接管，仅记录（开发书 6.3 / 14）
-            reporter.hookEvent(Constants.EV_HOOK_TARGET_NOT_FOUND,
-                e.getClass().getSimpleName() + ": " + e.getMessage());
+            String event = e instanceof ClassNotFoundException
+                ? Constants.EV_HOOK_CLASS_NOT_FOUND : Constants.EV_HOOK_METHOD_NOT_FOUND;
+            reporter.hookEvent(event, e.getClass().getSimpleName() + ": " + e.getMessage());
         } catch (Throwable t) {
-            reporter.hookEvent(Constants.EV_HOOK_FAILED,
+            reporter.hookEvent(Constants.EV_HOOK_INSTALL_FAILED,
                 t.getClass().getSimpleName() + ": " + t.getMessage());
         }
     }
@@ -133,6 +137,8 @@ public final class ColorOS16PowerAssistantHook {
         }
 
         // 命中 0.5 秒助手唤醒事件（开发书 2.2 调用流程）
+        reporter.hookEvent(Constants.EV_POWER_ASSIST_EVENT_MATCHED,
+            "what=0x" + Integer.toHexString(Constants.MSG_POWER_ASSIST_0X3F3));
         RuntimeConfig.Snapshot snapshot = runtimeConfig.refresh();
         if (snapshot == null || !snapshot.enabled) {
             // 模块未启用（或偏好读取失败）：执行系统原逻辑

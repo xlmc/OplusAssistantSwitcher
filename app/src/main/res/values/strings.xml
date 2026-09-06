@@ -18,7 +18,9 @@
     <string name="home_module_inactive">未生效</string>
     <string name="home_module_enabled_wait_reboot">已启用（重启后生效）</string>
     <string name="home_module_disabled">未启用</string>
+    <string name="home_module_waiting_sync">等待配置同步</string>
     <string name="home_service_unbound">LSPosed 服务未连接，设置暂不生效</string>
+    <string name="home_config_sync_pending">配置等待远端确认，当前不会接管</string>
     <string name="home_hook_status_format">Hook：%1$s</string>
     <string name="home_hook_not_active">未生效（HOOK_NOT_ACTIVE）</string>
     <string name="home_hook_old_version">Hook：system_server 仍加载旧版本</string>
@@ -96,6 +98,8 @@
     <string name="diagnostics_system_server_state">系统助手状态（system_server 解析 / CurrentOplusAssistant）</string>
     <string name="diagnostics_ss_none">暂未收到 system_server 状态（启用模块并重启后自动更新）</string>
     <string name="diagnostics_module_version">模块版本一致性</string>
+    <string name="diagnostics_runtime_status">运行态 Binder / Hook 生命周期</string>
+    <string name="diagnostics_config_state">配置同步状态</string>
     <string name="diagnostics_candidates">助手候选与资格来源</string>
     <string name="diagnostics_selection_detail">选择详情</string>
     <string name="diagnostics_selection">当前选择</string>
@@ -112,6 +116,7 @@
     <string name="settings_service_state">LSPosed 服务状态</string>
     <string name="settings_service_ok">已连接，设置将实时生效</string>
     <string name="settings_service_unbound">未连接：请先在 LSPosed 中启用本模块（作用域：system）并重启</string>
+    <string name="settings_sync_pending">等待同步：本地期望已保存，远端未确认，当前不会生效</string>
     <string name="btn_reset_selection">清除当前选择</string>
     <string name="settings_about">关于</string>
     <string name="settings_version">版本 %1$s</string>

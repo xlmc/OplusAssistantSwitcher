@@ -127,13 +127,20 @@ public class AssistantPickerActivity extends AppCompatActivity {
         if (pending == null) {
             return;
         }
-        boolean remoteOk = ConfigStore.writeSelection(this,
-            pending.packageName, pending.componentName, pending.eligibilitySource);
-        if (remoteOk) {
-            finish();
-        } else {
-            tvNote.setVisibility(View.VISIBLE);
-        }
+        AssistantCandidate selected = pending;
+        btnConfirm.setEnabled(false);
+        AppExecutors.io().execute(() -> {
+            boolean remoteOk = ConfigStore.writeSelection(this,
+                selected.packageName, selected.componentName, selected.eligibilitySource);
+            runOnUiThread(() -> {
+                if (remoteOk) {
+                    finish();
+                } else {
+                    tvNote.setVisibility(View.VISIBLE);
+                    btnConfirm.setEnabled(true);
+                }
+            });
+        });
     }
 
     private final class Adapter extends RecyclerView.Adapter<Adapter.Holder> {

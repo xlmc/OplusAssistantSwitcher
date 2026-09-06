@@ -36,11 +36,13 @@ xposed 层（运行于 system_server）
 ├── AssistantLauncher              以系统上下文按标准 Assistant 入口发起调用
 ├── RuntimeConfig                  Remote Preferences 同步 + 进程内缓存
 ├── DiagnosticReporter             轻量日志事件缓冲与异步上报（禁止热路径写库）
+├── RuntimeStatusBridge             system_server → App Binder 状态/事件通道与 ping 回调
 └── ContextProvider                system_server Context 捕获（内部支撑）
 
 app 层（模块 App）
 ├── app/AssistApp + ConfigStore    XposedService 绑定；Remote Preferences 写入 + 本地镜像
-├── data/                          Room 日志库、广播接收器、Hook 状态快照
+├── app/RuntimeStatusService       system_server Binder 状态/事件接收与 ping 快照落库
+├── data/                          Room 日志库、广播降级接收器、运行态/Hook 状态快照
 ├── system/                        系统默认助手读取、第三方助手扫描、设备信息
 └── ui/                            首页 / 助手选择 / 日志 / 诊断信息 / 设置
 
@@ -55,7 +57,7 @@ shared 层（双端共用，纯 Java）
 - 方法：`handleMessage(Message)`
 - 触发：`Message.what == 0x3F3`（约 0.5 秒电源键助手唤醒）
 
-该类名、内部类结构与消息码属于厂商实现细节，ROM 更新可能变化。因此它被封装在 `ColorOS16PowerAssistantHook` 中：类/方法找不到时记录 `HOOK_TARGET_NOT_FOUND`，非 OPlus ROM 记录 `ROM_UNSUPPORTED`，任何安装失败退化为「不接管」，绝不崩 system_server。
+该类名、内部类结构与消息码属于厂商实现细节，ROM 更新可能变化。因此它被封装在 `ColorOS16PowerAssistantHook` 中：类找不到记录 `HOOK_CLASS_NOT_FOUND`，方法找不到记录 `HOOK_METHOD_NOT_FOUND`，安装异常记录 `HOOK_INSTALL_FAILED`，非 OPlus ROM 记录 `ROM_UNSUPPORTED`，任何安装失败退化为「不接管」，绝不崩 system_server。
 
 ### 2.2 调用流程（开发书 2.2）
 
@@ -74,8 +76,10 @@ shared 层（双端共用，纯 Java）
 
 ### 2.3 配置与日志链路
 
-- **配置**：App 通过 `XposedService.getRemotePreferences("ouhuan_config")` 写入；Hook 侧 `XposedInterface.getRemotePreferences()` 只读同步，每次触发刷新一次快照并缓存。读取失败一律视为「模块未启用」。
-- **日志**：Hook 侧生成轻量 LogEvent（字段见开发书 8.3）→ 显式组件广播送达 App 的 `LogEntryReceiver`（`exported=true` + signature 级权限；API 34+ 再校验 system/module 发送方）→ Room 落库。systemReady 之前广播通道不可用，事件先入内存缓冲（上限 64 条）由 AMS.systemReady 后补发。热路径内无 Room/SQLite、无网络、无 sleep/轮询。
+- **配置**：App 通过 `XposedService.getRemotePreferences("ouhuan_config")` 写入；只有 `Editor.commit()` 返回成功才更新本地成功镜像并允许首页显示有效。失败时保存 local desired + pending 标志，`XposedService` 重连后自动 reconcile；Hook 侧只读同步并缓存，读取失败一律视为「模块未启用」。
+- **运行态**：system_server 以显式 `bindServiceAsUser` 连接 `RuntimeStatusService`，Binder 事务只接受 UID 1000；App 诊断页发起 ping，回调返回编译期模块版本、加载时间、`processName=system_server`、框架信息、Hook 阶段/安装状态和当前助手状态。
+- **生命周期**：`MODULE_LOADED → SYSTEM_SERVER_STARTING → SYSTEM_CONTEXT_READY → HOOK_CLASS_FOUND → HOOK_METHOD_FOUND → HOOK_INSTALLED → STATE_CHANNEL_READY → POWER_ASSIST_EVENT_MATCHED` 分别记录；缺失上下文、类/方法、安装或通道失败使用独立失败状态；安装成功但尚未收到 `0x3F3` 时显示 `POWER_ASSIST_NOT_MATCHED`。
+- **日志**：Hook 侧生成轻量 LogEvent（字段见开发书 8.3）→ Binder 推送给 App Service → Room 落库。旧显式组件广播只作为 Binder 不可用时的降级通道，API 34+ 使用 `BroadcastOptions.setShareIdentityEnabled(true)`，接收器记录真实 sender UID/package。systemReady 之前事件保留在内存队列（上限 64 条）。热路径内无 Room/SQLite、无网络、无 sleep/轮询。
 - **敏感数据**：日志不存储语音正文、屏幕内容、账户信息、Token；详细诊断模式只追加类名、方法名、Intent、ComponentName 与异常摘要。
 
 ## 3. Xposed 元数据
@@ -107,8 +111,8 @@ CI 与 Release 均运行 `.github/scripts/verify_xposed_meta.sh` 校验以上内
 
 ### 4.3 版本一致性与重启标记
 
-- `MainModule` 在 `system_server` 启动时从模块自身 `ApplicationInfo` 读取实际加载的 `versionName/versionCode`，并随既有 `STATE_REPORT` 上报。
-- App 侧将该版本持久化，并与当前 APK 的 `versionName/versionCode` 比较：首页和诊断页显示两边版本；一致时显示「模块版本已同步」，不一致时显示「需要重载 system_server / 重启设备后生效」。未收到上报或版本不完整时不误报一致。
+- `ModuleBuildInfo` 将 `BuildConfig.VERSION_NAME/VERSION_CODE` 编译期写入模块 dex；`MainModule` 不再用 system_server 的 PackageManager 查询安装 APK 版本。App 侧还通过官方 `XposedService.getRunningTargets()` 的 `HookedTarget.getLoadedVersionCode()` 展示目标进程真实加载 versionCode。
+- App 侧将 Binder 状态持久化，并与当前 APK 的 `versionName/versionCode` 比较：首页和诊断页显示两边版本；一致时显示「模块版本已同步」，不一致时显示「需要重载 system_server / 重启设备后生效」。未收到 ping/上报或版本不完整时不误报一致。
 - Release 与 CHANGELOG 必须明确写 `是否需要重启设备：是/否`。Release workflow 会比较当前 Tag 与上一正式 Tag 的文件变更：涉及 `xposed/`、`shared/`、Xposed 元数据、`AndroidManifest.xml` 或状态接收协议时标记「是」，否则标记「否」。
 - 开发期仅 App/UI 改动：安装新版 APK → 重启 App → 直接测试；涉及 Xposed/system_server 或通信协议：安装新版 APK → 根据版本卡提示重载/重启 → 验证两边版本一致。不要把整机重启作为所有版本的默认动作。
 

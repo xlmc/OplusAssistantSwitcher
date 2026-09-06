@@ -12,6 +12,9 @@ public final class Constants {
     /** 模块应用包名（java_init.list / 广播目标均以此为准）。 */
     public static final String MODULE_PACKAGE = "com.ouhuan.oplusassistant";
 
+    /** 未知版本号统一使用的哨兵值。 */
+    public static final long UNKNOWN_VERSION_CODE = -1L;
+
     /** Hook 侧 → App 侧日志广播 Action。 */
     public static final String ACTION_LOG_EVENT = "com.ouhuan.oplusassistant.action.LOG_EVENT";
 
@@ -87,13 +90,24 @@ public final class Constants {
 
     /** Hook 日志事件（开发书 8.2）。 */
     public static final String EV_MODULE_LOADED = "MODULE_LOADED";
+    public static final String EV_SYSTEM_SERVER_STARTING = "SYSTEM_SERVER_STARTING";
+    public static final String EV_SYSTEM_CONTEXT_READY = "SYSTEM_CONTEXT_READY";
+    public static final String EV_SYSTEM_CONTEXT_UNAVAILABLE = "SYSTEM_CONTEXT_UNAVAILABLE";
+    public static final String EV_AMS_SYSTEM_READY = "AMS_SYSTEM_READY";
     public static final String EV_SYSTEM_SERVER_READY = "SYSTEM_SERVER_READY";
     public static final String EV_HOOK_CLASS_FOUND = "HOOK_CLASS_FOUND";
     public static final String EV_HOOK_METHOD_FOUND = "HOOK_METHOD_FOUND";
+    public static final String EV_HOOK_CLASS_NOT_FOUND = "HOOK_CLASS_NOT_FOUND";
+    public static final String EV_HOOK_METHOD_NOT_FOUND = "HOOK_METHOD_NOT_FOUND";
     public static final String EV_HOOK_INSTALLED = "HOOK_INSTALLED";
     public static final String EV_HOOK_FAILED = "HOOK_FAILED";
+    public static final String EV_HOOK_INSTALL_FAILED = "HOOK_INSTALL_FAILED";
     public static final String EV_HOOK_TARGET_NOT_FOUND = "HOOK_TARGET_NOT_FOUND";
     public static final String EV_ROM_UNSUPPORTED = "ROM_UNSUPPORTED";
+    public static final String EV_STATE_CHANNEL_READY = "STATE_CHANNEL_READY";
+    public static final String EV_STATE_CHANNEL_FAILED = "STATE_CHANNEL_FAILED";
+    public static final String EV_POWER_ASSIST_EVENT_MATCHED = "POWER_ASSIST_EVENT_MATCHED";
+    public static final String EV_POWER_ASSIST_NOT_MATCHED = "POWER_ASSIST_NOT_MATCHED";
 
     /** 调用日志事件（开发书 8.2）。 */
     public static final String EV_POWER_ASSIST_TRIGGERED = "POWER_ASSIST_TRIGGERED";

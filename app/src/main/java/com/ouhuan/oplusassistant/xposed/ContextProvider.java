@@ -15,6 +15,23 @@ import io.github.libxposed.api.XposedInterface;
 public final class ContextProvider {
 
     private volatile Context context;
+    private volatile Runnable readyListener;
+    private boolean readyNotified;
+
+    /** 设置 context 就绪回调；若 context 已经捕获则立即补发一次。 */
+    public void setReadyListener(Runnable listener) {
+        boolean notify;
+        synchronized (this) {
+            readyListener = listener;
+            notify = context != null && listener != null && !readyNotified;
+            if (notify) {
+                readyNotified = true;
+            }
+        }
+        if (notify) {
+            runReadyListener(listener);
+        }
+    }
 
     /** 尽早尝试反射获取 system context（onSystemServerStarting 阶段调用）。 */
     public void captureEarly() {
@@ -27,7 +44,7 @@ public final class ContextProvider {
             if (thread != null) {
                 Object ctx = at.getMethod("getSystemContext").invoke(thread);
                 if (ctx instanceof Context) {
-                    context = (Context) ctx;
+                    setContext((Context) ctx);
                 }
             }
         } catch (Throwable ignored) {
@@ -61,7 +78,7 @@ public final class ContextProvider {
             field.setAccessible(true);
             Object ctx = field.get(systemServerInstance);
             if (ctx instanceof Context) {
-                context = (Context) ctx;
+                setContext((Context) ctx);
             }
         } catch (Throwable ignored) {
         }
@@ -74,5 +91,30 @@ public final class ContextProvider {
         }
         captureEarly();
         return context;
+    }
+
+    private void setContext(Context value) {
+        Runnable listener = null;
+        synchronized (this) {
+            if (context != null || value == null) {
+                return;
+            }
+            context = value;
+            if (readyListener != null && !readyNotified) {
+                readyNotified = true;
+                listener = readyListener;
+            }
+        }
+        if (listener != null) {
+            runReadyListener(listener);
+        }
+    }
+
+    private void runReadyListener(Runnable listener) {
+        try {
+            listener.run();
+        } catch (Throwable ignored) {
+            // context 回调失败不影响 system_server 启动。
+        }
     }
 }

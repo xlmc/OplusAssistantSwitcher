@@ -6,6 +6,13 @@
 
 **是否需要重启设备：是**（本轮包含 Xposed/system_server 代码与 system_server↔App 状态协议变更；安装后需重载或重启 system_server）。
 
+### P0 修复
+
+- system_server↔App 运行态主通道改为 UID 1000 校验的显式 Binder；旧广播仅作 API 34 共享发送方身份的降级通道
+- 版本信息改为编译期写入模块 dex，并结合 libxposed `HookedTarget` 的实际加载 versionCode 判断是否需要重载
+- 配置写入以 Remote Preferences `commit()` 成功为生效闸门；断线/失败时保留本地期望、显示等待同步，并在服务重连后自动 reconcile
+- 诊断页增加 Binder ping、真实 `system_server` 进程/加载版本、独立 Hook 生命周期、状态通道、电源键匹配及三方配置状态
+
 ### Added（V1，对应开发书 v1.0）
 
 - libxposed API 102 最小工程：LSPosed 可识别，作用域固定 `system`（staticScope）

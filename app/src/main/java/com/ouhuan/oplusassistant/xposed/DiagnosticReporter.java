@@ -1,7 +1,9 @@
 package com.ouhuan.oplusassistant.xposed;
 
+import android.app.BroadcastOptions;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 
 import com.ouhuan.oplusassistant.shared.Constants;
 
@@ -29,6 +31,7 @@ public final class DiagnosticReporter {
     private final List<com.ouhuan.oplusassistant.shared.LogEvent> pending = new ArrayList<>();
 
     private volatile ContextProvider contextProvider;
+    private volatile RuntimeStatusBridge runtimeBridge;
     private volatile String hookStatus = "-";
 
     public DiagnosticReporter(XposedInterface xposed) {
@@ -48,6 +51,10 @@ public final class DiagnosticReporter {
 
     public void setContextProvider(ContextProvider provider) {
         this.contextProvider = provider;
+    }
+
+    public void setRuntimeBridge(RuntimeStatusBridge bridge) {
+        this.runtimeBridge = bridge;
     }
 
     /** Hook 生命周期日志（开发书 8.2 Hook 日志）。 */
@@ -93,19 +100,18 @@ public final class DiagnosticReporter {
     }
 
     private void send(com.ouhuan.oplusassistant.shared.LogEvent event) {
+        RuntimeStatusBridge bridge = runtimeBridge;
+        if (bridge != null && bridge.publishEvent(event)) {
+            logToXposed("sent RUNTIME_EVENT event=" + event.event);
+            return;
+        }
         Context context = contextProvider == null ? null : contextProvider.get();
         if (context == null) {
             buffer(event);
             return;
         }
         try {
-            Intent intent = new Intent(Constants.ACTION_LOG_EVENT);
-            // 显式组件：跨 UID 投递不依赖 intent-filter 解析（Issue #1 P0）
-            intent.setClassName(modulePackage, Constants.RECEIVER_CLASS);
-            for (java.util.Map.Entry<String, String> entry : event.toMap().entrySet()) {
-                intent.putExtra(entry.getKey(), entry.getValue());
-            }
-            context.sendBroadcast(intent);
+            sendLegacyBroadcast(context, Constants.ACTION_LOG_EVENT, event.toMap(), null);
             logToXposed("sent LOG_EVENT event=" + event.event);
         } catch (Throwable t) {
             buffer(event);
@@ -166,30 +172,50 @@ public final class DiagnosticReporter {
      */
     public void reportState(java.util.Map<String, String> fields,
                             java.util.List<String> candidateEntries) {
+        RuntimeStatusBridge bridge = runtimeBridge;
+        if (bridge != null && bridge.publishState(fields, candidateEntries)) {
+            int count = candidateEntries == null ? 0 : candidateEntries.size();
+            String name = fields == null ? "" : String.valueOf(
+                fields.get(Constants.STATE_CURRENT_NAME));
+            logToXposed("sent RUNTIME_STATE name=" + name + " candidates=" + count);
+            return;
+        }
         Context context = contextProvider == null ? null : contextProvider.get();
         if (context == null) {
             safeLog("reportState skipped: no system context");
             return;
         }
         try {
-            Intent intent = new Intent(Constants.ACTION_STATE_REPORT);
-            // 显式组件：跨 UID 投递不依赖 intent-filter 解析（Issue #1 P0）
-            intent.setClassName(modulePackage, Constants.RECEIVER_CLASS);
-            if (fields != null) {
-                for (java.util.Map.Entry<String, String> entry : fields.entrySet()) {
-                    intent.putExtra(entry.getKey(), entry.getValue() == null ? "" : entry.getValue());
-                }
-            }
-            if (candidateEntries != null) {
-                intent.putStringArrayListExtra(Constants.STATE_CANDIDATES,
-                    new ArrayList<>(candidateEntries));
-            }
-            context.sendBroadcast(intent);
+            sendLegacyBroadcast(context, Constants.ACTION_STATE_REPORT, fields, candidateEntries);
             int count = candidateEntries == null ? 0 : candidateEntries.size();
             String name = fields == null ? "" : String.valueOf(fields.get(Constants.STATE_CURRENT_NAME));
             logToXposed("sent STATE_REPORT name=" + name + " candidates=" + count);
         } catch (Throwable t) {
             safeLog("reportState failed: " + t);
+        }
+    }
+
+    /** 旧广播降级通道：显式组件 + API 34 共享发送方身份。 */
+    private void sendLegacyBroadcast(Context context, String action,
+                                     java.util.Map<String, String> fields,
+                                     java.util.List<String> candidateEntries) {
+        Intent intent = new Intent(action);
+        intent.setClassName(modulePackage, Constants.RECEIVER_CLASS);
+        if (fields != null) {
+            for (java.util.Map.Entry<String, String> entry : fields.entrySet()) {
+                intent.putExtra(entry.getKey(), entry.getValue() == null ? "" : entry.getValue());
+            }
+        }
+        if (candidateEntries != null) {
+            intent.putStringArrayListExtra(Constants.STATE_CANDIDATES,
+                new ArrayList<>(candidateEntries));
+        }
+        if (Build.VERSION.SDK_INT >= 34) {
+            BroadcastOptions options = BroadcastOptions.makeBasic();
+            options.setShareIdentityEnabled(true);
+            context.sendBroadcast(intent, null, options.toBundle());
+        } else {
+            context.sendBroadcast(intent);
         }
     }
 
