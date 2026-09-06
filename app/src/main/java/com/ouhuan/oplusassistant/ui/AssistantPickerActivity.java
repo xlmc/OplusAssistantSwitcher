@@ -48,7 +48,9 @@ public class AssistantPickerActivity extends AppCompatActivity {
         rv.setLayoutManager(new LinearLayoutManager(this));
         adapter = new Adapter();
         rv.setAdapter(adapter);
-        findViewById(R.id.toolbar).setNavigationOnClickListener(v -> finish());
+        com.google.android.material.appbar.MaterialToolbar toolbar =
+            findViewById(R.id.toolbar);
+        toolbar.setNavigationOnClickListener(v -> finish());
         load();
     }
 

@@ -78,8 +78,8 @@ public final class AssistantScanner {
 
         // ---- 2) 排除 ----
         List<AssistantCandidate> result = new ArrayList<>();
-        for (Map.Entry<String, Set<String>> entry : sources.entrySet()) {
-            String pkg = entry.getKey();
+        for (Map.Entry<String, Set<String>> sourceEntry : sources.entrySet()) {
+            String pkg = sourceEntry.getKey();
             if (isExcluded(context, pm, pkg, system)) {
                 continue;
             }
@@ -101,7 +101,7 @@ public final class AssistantScanner {
                 continue;
             }
 
-            Set<String> tags = entry.getValue();
+            Set<String> tags = sourceEntry.getValue();
             StringBuilder eligibility = new StringBuilder();
             for (String tag : tags) {
                 if (eligibility.length() > 0) {
