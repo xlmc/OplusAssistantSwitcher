@@ -115,7 +115,7 @@ public final class RuntimeStatusBridge {
             boolean bound = context.bindServiceAsUser(intent, connection,
                 Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND,
                 // UserHandle 的公开 SDK 没有 SYSTEM/USER_SYSTEM 常量；0 是 system user。
-                UserHandle.of(0));
+                new UserHandle(0));
             if (!bound) {
                 markChannelFailed("bindServiceAsUser returned false");
             }
