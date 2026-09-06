@@ -37,6 +37,7 @@ public class LogsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_logs);
+        SystemBars.applyInsets(findViewById(android.R.id.content));
         swFailures = findViewById(R.id.swFailures);
         RecyclerView rv = findViewById(R.id.rvLogs);
         rv.setLayoutManager(new LinearLayoutManager(this));

@@ -13,30 +13,41 @@ import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * 助手选择页候选扫描（开发书 5.2 / 9；Issue #1 收紧后的规则）。
+ * 助手候选扫描（开发书 5.2 / 9；Issue #1 P0-2 多来源候选 + 严格过滤）。
  *
- * 入选条件（全部满足）：
- * 1. 包内声明 android.service.voice.VoiceInteractionService，且该服务要求
- *    android.permission.BIND_VOICE_INTERACTION（强信号，必要条件）；
- * 2. 当前用户下已安装、应用启用、组件启用；
- * 3. 存在可实际调用的 Assistant 入口（ACTION_ASSIST 或 ACTION_VOICE_COMMAND Activity）；
- * 4. 排除欧唤自身、ColorOS 内置小布等系统原始目标、当前系统默认助手。
+ * 候选来源取并集（避免 false negative）：
+ * 1. 声明 VoiceInteractionService 且要求 BIND_VOICE_INTERACTION 的应用；
+ * 2. 当前 ROLE_ASSISTANT 持有者；
+ * 3. 系统/ColorOS 已配置为助手的组件（voice_interaction_service / assistant）；
+ * 4. 上述应用的 ACTION_ASSIST / ACTION_VOICE_COMMAND 入口经解析验证后
+ *    才可入选（ACTION_ASSIST_VERIFIED）。
  *
- * ACTION_ASSIST 单独不再构成入选条件：Firefox 等仅注册 assist 响应的
- * 普通应用不会进入列表；也不使用任何固定包名白名单。
+ * 再过滤普通应用（避免 false positive）：仅响应 ACTION_ASSIST 而无任何
+ * 系统级助手信号的普通应用（如 Firefox）不进入列表。
+ * 排除：欧唤自身、ColorOS 内置小布等固定内置名单、厂商系统预装的
+ * 当前电源键原始目标。不使用任何固定第三方包名白名单。
  */
 public final class AssistantScanner {
+
+    public static final String TAG_VIS = "VOICE_INTERACTION_SERVICE";
+    public static final String TAG_ROLE = "ROLE_ASSISTANT";
+    public static final String TAG_COLOROS_COMPONENT = "COLOROS_ASSISTANT_COMPONENT";
+    public static final String TAG_ENTRY_VERIFIED = "ACTION_ASSIST_VERIFIED";
 
     public List<AssistantCandidate> scan(Context context) {
         PackageManager pm = context.getPackageManager();
 
-        // 1) 强信号候选：VIS 服务 + BIND_VOICE_INTERACTION 权限
-        Set<String> visPackages = new LinkedHashSet<>();
+        // ---- 1) 多来源候选取并集：pkg -> 资格标签 ----
+        Map<String, Set<String>> sources = new LinkedHashMap<>();
+
+        // 1a. 声明 VIS 且要求 BIND_VOICE_INTERACTION（强信号）
         try {
             List<ResolveInfo> services = pm.queryIntentServices(
                 new Intent(Constants.VIS_SERVICE_INTERFACE),
@@ -47,21 +58,38 @@ public final class AssistantScanner {
                     continue;
                 }
                 if (Constants.PERM_BIND_VOICE_INTERACTION.equals(service.permission)) {
-                    visPackages.add(service.packageName);
+                    addTag(sources, service.packageName, TAG_VIS);
                 }
             }
         } catch (Throwable ignored) {
         }
 
-        // 2) 过滤并解析可调用入口
+        // 1b/1c. ROLE_ASSISTANT 持有者与系统已配置助手组件
+        SystemAssistantState system = new SystemAssistantReader().read(context);
+        if (system.roleHolderPackage != null && !system.roleHolderPackage.isEmpty()) {
+            addTag(sources, system.roleHolderPackage, TAG_ROLE);
+        }
+        if (system.voiceInteractionService != null && !system.voiceInteractionService.isEmpty()) {
+            addTag(sources, packagePart(system.voiceInteractionService), TAG_VIS);
+        }
+        if (system.assistComponent != null && !system.assistComponent.isEmpty()) {
+            addTag(sources, packagePart(system.assistComponent), TAG_COLOROS_COMPONENT);
+        }
+
+        // ---- 2) 排除 ----
         List<AssistantCandidate> result = new ArrayList<>();
-        for (String pkg : visPackages) {
-            if (isExcluded(context, pkg)) {
+        for (Map.Entry<String, Set<String>> entry : sources.entrySet()) {
+            String pkg = entry.getKey();
+            if (isExcluded(context, pm, pkg, system)) {
                 continue;
             }
+
+            // ---- 3) 已安装 / 启用 ----
             if (!isAppEnabled(pm, pkg)) {
                 continue;
             }
+
+            // ---- 4) 入口解析验证（ACTION_ASSIST_VERIFIED） ----
             String entry = findEntry(pm, Intent.ACTION_ASSIST, pkg);
             String method = Constants.LAUNCH_METHOD_ASSIST;
             if (entry == null) {
@@ -72,14 +100,42 @@ public final class AssistantScanner {
                 // 无可实际调用的 Assistant 入口：不展示
                 continue;
             }
+
+            Set<String> tags = entry.getValue();
+            StringBuilder eligibility = new StringBuilder();
+            for (String tag : tags) {
+                if (eligibility.length() > 0) {
+                    eligibility.append(" + ");
+                }
+                eligibility.append(tag);
+            }
+            eligibility.append(" + ").append(TAG_ENTRY_VERIFIED);
             result.add(new AssistantCandidate(pkg, loadLabel(pm, pkg), entry, method,
-                true, "VoiceInteractionService + BIND_VOICE_INTERACTION"));
+                tags.contains(TAG_VIS), eligibility.toString()));
         }
         Collections.sort(result, (a, b) -> a.label.compareToIgnoreCase(b.label));
         return result;
     }
 
-    private boolean isExcluded(Context context, String pkg) {
+    private static void addTag(Map<String, Set<String>> sources, String pkg, String tag) {
+        if (pkg == null || pkg.isEmpty()) {
+            return;
+        }
+        Set<String> tags = sources.get(pkg);
+        if (tags == null) {
+            tags = new LinkedHashSet<>();
+            sources.put(pkg, tags);
+        }
+        tags.add(tag);
+    }
+
+    /**
+     * 排除规则：欧唤自身；内置小布名单；厂商系统预装（FLAG_SYSTEM 且非
+     * 已更新系统应用）且正担任当前助手的包 = 系统原始目标。
+     * 第三方应用即使当前是系统默认助手，也保留为候选。
+     */
+    private boolean isExcluded(Context context, PackageManager pm, String pkg,
+                               SystemAssistantState system) {
         if (pkg == null || pkg.isEmpty()) {
             return true;
         }
@@ -91,21 +147,26 @@ public final class AssistantScanner {
                 return true;
             }
         }
-        SystemAssistantState systemDefault = new SystemAssistantReader().read(context);
-        if (pkg.equals(systemDefault.roleHolderPackage)) {
-            return true;
-        }
-        if (systemDefault.voiceInteractionService != null
-            && systemDefault.voiceInteractionService.contains("/")
-            && packagePart(systemDefault.voiceInteractionService).equals(pkg)) {
-            return true;
-        }
-        if (systemDefault.assistComponent != null
-            && systemDefault.assistComponent.contains("/")
-            && packagePart(systemDefault.assistComponent).equals(pkg)) {
+        if (isVendorOriginalTarget(pm, pkg, system.roleHolderPackage)
+            || isVendorOriginalTarget(pm, pkg, packagePart(system.voiceInteractionService))
+            || isVendorOriginalTarget(pm, pkg, packagePart(system.assistComponent))) {
             return true;
         }
         return false;
+    }
+
+    /** 系统预装且担任当前助手 → 厂商原始目标；第三方应用不受影响。 */
+    private boolean isVendorOriginalTarget(PackageManager pm, String pkg, String currentPkg) {
+        if (currentPkg == null || currentPkg.isEmpty() || !currentPkg.equals(pkg)) {
+            return false;
+        }
+        try {
+            ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+            return (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                && (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private boolean isAppEnabled(PackageManager pm, String pkg) {
@@ -142,6 +203,9 @@ public final class AssistantScanner {
     }
 
     private String packagePart(String flattened) {
+        if (flattened == null || flattened.isEmpty()) {
+            return "";
+        }
         int slash = flattened.indexOf('/');
         return slash > 0 ? flattened.substring(0, slash) : flattened;
     }

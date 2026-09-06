@@ -33,7 +33,8 @@
         <activity
             android:name=".ui.AssistantPickerActivity"
             android:exported="false"
-            android:label="@string/picker_title" />
+            android:label="@string/picker_title"
+            android:theme="@style/Theme.Ouhuan.NoActionBar" />
 
         <activity
             android:name=".ui.LogsActivity"

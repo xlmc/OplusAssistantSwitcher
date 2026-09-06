@@ -28,8 +28,9 @@
     <string name="home_system_assistant">当前系统默认助手</string>
     <string name="home_assistant_source_role">来源：ROLE_ASSISTANT</string>
     <string name="home_assistant_source_vis">来源：VoiceInteractionService</string>
-    <string name="home_assistant_source_component">来源：电源键助手组件</string>
-    <string name="home_assistant_source_none">标准 Android 助手状态不可用，可能未设置</string>
+    <string name="home_assistant_source_none">未设置标准系统助手（未检测到 ROLE_ASSISTANT / VoiceInteractionService）</string>
+    <string name="home_power_key_original_format">ColorOS 电源键原始目标：%1$s（来自系统电源键助手组件，非标准助手角色）</string>
+    <string name="home_power_key_original_raw">ColorOS 电源键原始目标：来自系统电源键助手组件（无法解析应用名）</string>
     <string name="home_power_target">0.5 秒电源键当前助手</string>
     <string name="home_target_not_taken_over">未接管（系统原始目标）</string>
     <string name="home_target_secondary_disabled">模块关闭时电源键执行系统原逻辑</string>
@@ -44,8 +45,9 @@
     <string name="btn_diagnostics">诊断信息</string>
     <string name="btn_settings">设置</string>
 
-    <string name="picker_empty">未检测到可用第三方语音助手</string>
-    <string name="picker_hint">仅列出声明 VoiceInteractionService 的第三方应用</string>
+    <string name="picker_empty">未检测到可用的第三方语音助手</string>
+    <string name="picker_scanning">正在扫描可用语音助手…</string>
+    <string name="picker_hint">请选择要由 0.5 秒电源键唤醒的语音助手</string>
     <string name="picker_note_unsaved">设置未能写入：LSPosed 服务未连接</string>
     <string name="picker_source_play">通过 Google Play 安装</string>
     <string name="picker_source_system">系统预装</string>
@@ -70,6 +72,7 @@
     <string name="diagnostics_hook">Hook 状态详情</string>
     <string name="diagnostics_hook_tech">Hook 技术详情</string>
     <string name="diagnostics_assistant_detail">系统默认助手详情</string>
+    <string name="diagnostics_candidates">助手候选与资格来源</string>
     <string name="diagnostics_selection_detail">选择详情</string>
     <string name="diagnostics_selection">当前选择</string>
     <string name="diagnostics_stats">日志统计</string>

@@ -11,10 +11,12 @@ import com.ouhuan.oplusassistant.shared.RoleHolders;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
 /**
- * 首页「当前系统默认助手」读取（开发书 5.1；Issue #1 第四条）。
- * 与 Hook 状态完全解耦：无论模块是否生效，都独立读取系统实时状态。
- * 读取顺序：ROLE_ASSISTANT 持有者 → VoiceInteractionService → 电源键助手组件。
- * 三者皆不可得时明确显示「未设置或无法识别」，而不是跟随 Hook 状态。
+ * 标准系统默认助手读取（开发书 5.1；Issue #1 P0-1）。
+ *
+ * 「当前系统默认助手」只反映标准 Android 状态：ROLE_ASSISTANT 持有者 →
+ * VoiceInteractionService 配置。ColorOS 电源键助手组件是另一套厂商配置，
+ * 单独读取（{@link #readPowerKeyComponent}），两者不得互相冒充。
+ * 与 Hook 状态完全解耦：无论模块是否生效都独立读取。
  */
 public final class SystemAssistantReader {
 
@@ -28,28 +30,35 @@ public final class SystemAssistantReader {
                     android.os.Process.myUserHandle());
             }
         } catch (Throwable ignored) {
-            // ROM 限制时退化到 VIS / 助手组件读取
+            // ROM 限制时退化到 VIS 读取
         }
         String vis = readSecure(context, "voice_interaction_service");
-        String assistComponent = readSecure(context, "assistant");
+        String powerKeyComponent = readSecure(context, "assistant");
 
-        String primaryPkg = firstNonEmpty(roleHolder, packageOf(vis), packageOf(assistComponent));
-        String source;
-        if (roleHolder != null && !roleHolder.isEmpty()) {
-            source = SystemAssistantState.SOURCE_ROLE;
-        } else if (vis != null && !vis.isEmpty()) {
-            source = SystemAssistantState.SOURCE_VIS;
-        } else if (assistComponent != null && !assistComponent.isEmpty()) {
-            source = SystemAssistantState.SOURCE_ASSIST_COMPONENT;
-        } else {
-            source = SystemAssistantState.SOURCE_NONE;
-        }
-
+        String primaryPkg = roleHolder != null && !roleHolder.isEmpty()
+            ? roleHolder
+            : packageOf(vis);
         String label = primaryPkg == null || primaryPkg.isEmpty()
             ? "" : loadLabel(context, primaryPkg);
         boolean available = primaryPkg != null && !primaryPkg.isEmpty();
-        return new SystemAssistantState(roleHolder, vis, assistComponent, label,
+        String source;
+        if (roleHolder != null && !roleHolder.isEmpty()) {
+            source = SystemAssistantState.SOURCE_ROLE;
+        } else if (available) {
+            source = SystemAssistantState.SOURCE_VIS;
+        } else {
+            source = SystemAssistantState.SOURCE_NONE;
+        }
+        return new SystemAssistantState(roleHolder, vis, powerKeyComponent, label,
             available, source);
+    }
+
+    /**
+     * ColorOS 0.5 秒电源键原始目标（Settings.Secure assistant 组件）。
+     * 这是厂商电源键配置，与标准 Android 系统默认助手是两个概念。
+     */
+    public String readPowerKeyComponent(Context context) {
+        return readSecure(context, "assistant");
     }
 
     private String readSecure(Context context, String key) {
@@ -69,15 +78,6 @@ public final class SystemAssistantReader {
         } catch (Throwable t) {
             return "";
         }
-    }
-
-    private String firstNonEmpty(String... values) {
-        for (String v : values) {
-            if (v != null && !v.isEmpty()) {
-                return v;
-            }
-        }
-        return null;
     }
 
     private String packageOf(String flattened) {

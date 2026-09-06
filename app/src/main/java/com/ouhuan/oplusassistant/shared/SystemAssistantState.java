@@ -1,23 +1,26 @@
 package com.ouhuan.oplusassistant.shared;
 
 /**
- * 当前系统默认助手状态（开发书 5.1 SystemAssistantState）。
- * UI 显示必须来自系统实时状态，不允许用模块上次选择冒充。
- * source 标记检测来源，用于区分标准 Android 状态与 ColorOS 电源键目标。
+ * 系统助手状态（开发书 5.1；Issue #1 P0-1 三概念拆分）。
+ *
+ * 本类只承载「标准 Android 系统默认助手」：ROLE_ASSISTANT 持有者或
+ * VoiceInteractionService 配置。ColorOS 电源键助手组件（Settings.Secure
+ * assistant）是厂商电源键配置，不属于标准系统默认助手，仅在
+ * {@link #assistComponent} 保留原始值供首页次级信息与诊断页展示，
+ * 绝不参与 isAvailable / describe() 的判定。
  */
 public final class SystemAssistantState {
 
-    /** 检测来源：ROLE_ASSISTANT 持有者。 */
+    /** 检测来源：ROLE_ASSISTANT 持有者（标准）。 */
     public static final String SOURCE_ROLE = "ROLE_ASSISTANT";
-    /** 检测来源：VoiceInteractionService 设置。 */
+    /** 检测来源：VoiceInteractionService 配置（标准）。 */
     public static final String SOURCE_VIS = "VOICE_INTERACTION_SERVICE";
-    /** 检测来源：电源键助手组件（Settings.Secure assistant）。 */
-    public static final String SOURCE_ASSIST_COMPONENT = "ASSIST_COMPONENT";
-    /** 检测来源：全部不可用。 */
+    /** 检测来源：标准状态不可用。 */
     public static final String SOURCE_NONE = "NONE";
 
     public final String roleHolderPackage;
     public final String voiceInteractionService;
+    /** ColorOS 电源键助手组件原始值（Settings.Secure assistant），非标准助手角色。 */
     public final String assistComponent;
     public final String label;
     public final boolean isAvailable;
@@ -25,18 +28,11 @@ public final class SystemAssistantState {
 
     public SystemAssistantState(String roleHolderPackage,
                                 String voiceInteractionService,
-                                String label,
-                                boolean isAvailable) {
-        this(roleHolderPackage, voiceInteractionService, null, label, isAvailable);
-    }
-
-    public SystemAssistantState(String roleHolderPackage,
-                                String voiceInteractionService,
                                 String assistComponent,
                                 String label,
                                 boolean isAvailable) {
-        this(roleHolderPackage, voiceInteractionService, assistComponent, label, isAvailable,
-            isAvailable ? primarySource(roleHolderPackage, assistComponent) : SOURCE_NONE);
+        this(roleHolderPackage, voiceInteractionService, assistComponent, label,
+            isAvailable, defaultSource(roleHolderPackage, voiceInteractionService, isAvailable));
     }
 
     public SystemAssistantState(String roleHolderPackage,
@@ -53,16 +49,19 @@ public final class SystemAssistantState {
         this.source = source == null || source.isEmpty() ? SOURCE_NONE : source;
     }
 
-    private static String primarySource(String roleHolderPackage, String assistComponent) {
+    private static String defaultSource(String roleHolderPackage,
+                                        String voiceInteractionService,
+                                        boolean isAvailable) {
+        if (!isAvailable) {
+            return SOURCE_NONE;
+        }
         if (roleHolderPackage != null && !roleHolderPackage.isEmpty()) {
             return SOURCE_ROLE;
-        }
-        if (assistComponent != null && !assistComponent.isEmpty()) {
-            return SOURCE_ASSIST_COMPONENT;
         }
         return SOURCE_VIS;
     }
 
+    /** 仅描述标准 Android 系统默认助手。 */
     public String describe() {
         if (!isAvailable) {
             return "未设置或无法识别";
@@ -70,9 +69,7 @@ public final class SystemAssistantState {
         String name = label == null || label.isEmpty() ? "未知" : label;
         String pkg = roleHolderPackage != null && !roleHolderPackage.isEmpty()
             ? roleHolderPackage
-            : packageOf(assistComponent != null && !assistComponent.isEmpty()
-                ? assistComponent
-                : voiceInteractionService);
+            : packageOf(voiceInteractionService);
         return pkg == null || pkg.isEmpty() ? name : name + "（" + pkg + "）";
     }
 
@@ -81,13 +78,15 @@ public final class SystemAssistantState {
         if (SOURCE_ROLE.equals(source)) {
             return "来源：ROLE_ASSISTANT";
         }
-        if (SOURCE_ASSIST_COMPONENT.equals(source)) {
-            return "来源：电源键助手组件";
-        }
         if (SOURCE_VIS.equals(source)) {
             return "来源：VoiceInteractionService";
         }
-        return "标准 Android 助手状态不可用";
+        return "未设置标准系统助手";
+    }
+
+    /** ColorOS 电源键助手组件的包名（无则空串）。 */
+    public String powerKeyPackage() {
+        return packageOf(assistComponent);
     }
 
     private static String packageOf(String flattened) {

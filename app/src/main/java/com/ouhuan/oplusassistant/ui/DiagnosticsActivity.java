@@ -11,13 +11,16 @@ import com.ouhuan.oplusassistant.app.ConfigStore;
 import com.ouhuan.oplusassistant.data.AppExecutors;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
+import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
+import com.ouhuan.oplusassistant.system.AssistantScanner;
 import com.ouhuan.oplusassistant.system.DeviceProps;
 import com.ouhuan.oplusassistant.system.SystemAssistantReader;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -33,6 +36,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
     private TextView tvHook;
     private TextView tvHookTech;
     private TextView tvAssistantDetail;
+    private TextView tvCandidates;
     private TextView tvSelection;
     private TextView tvStats;
 
@@ -40,11 +44,14 @@ public class DiagnosticsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_diagnostics);
+        // P0-3：targetSdk 35 强制 edge-to-edge，全部内容从状态栏下方开始
+        SystemBars.applyInsets(findViewById(android.R.id.content));
         tvDevice = findViewById(R.id.tvDevice);
         tvService = findViewById(R.id.tvService);
         tvHook = findViewById(R.id.tvHook);
         tvHookTech = findViewById(R.id.tvHookTech);
         tvAssistantDetail = findViewById(R.id.tvAssistantDetail);
+        tvCandidates = findViewById(R.id.tvCandidates);
         tvSelection = findViewById(R.id.tvSelection);
         tvStats = findViewById(R.id.tvStats);
         findViewById(R.id.btnRefresh).setOnClickListener(v -> refresh());
@@ -97,7 +104,27 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 + "\nsource=" + systemDefault.source
                 + "\nroleHolder=" + orDash(systemDefault.roleHolderPackage)
                 + "\nvoiceInteractionService=" + orDash(systemDefault.voiceInteractionService)
-                + "\nassistComponent=" + orDash(systemDefault.assistComponent);
+                + "\nassistComponent(ColorOS 电源键原始目标)="
+                + orDash(systemDefault.assistComponent);
+
+            // 候选清单与每个候选的资格来源（仅诊断页展示，Issue #1 P0-2）
+            StringBuilder candidates = new StringBuilder();
+            List<AssistantCandidate> scanned =
+                new AssistantScanner().scan(this);
+            if (scanned.isEmpty()) {
+                candidates.append(getString(R.string.picker_empty));
+            } else {
+                for (AssistantCandidate c : scanned) {
+                    if (candidates.length() > 0) {
+                        candidates.append("\n\n");
+                    }
+                    candidates.append(c.label)
+                        .append("\npkg=").append(c.packageName)
+                        .append("\nentry=").append(c.componentName)
+                        .append("\nlaunchMethod=").append(c.launchMethod)
+                        .append("\neligibility=").append(c.eligibilitySource);
+                }
+            }
 
             String selection;
             if (!ConfigStore.isModuleEnabled(this)) {
@@ -121,6 +148,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String finalHook = hook;
             String finalHookTech = hookTech;
             String finalAssistantDetail = assistantDetail;
+            String finalCandidates = candidates.toString();
             String finalSelection = selection;
             String finalStats = stats;
             runOnUiThread(() -> {
@@ -129,6 +157,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 tvHook.setText(finalHook);
                 tvHookTech.setText(finalHookTech);
                 tvAssistantDetail.setText(finalAssistantDetail);
+                tvCandidates.setText(finalCandidates);
                 tvSelection.setText(finalSelection);
                 tvStats.setText(finalStats);
             });

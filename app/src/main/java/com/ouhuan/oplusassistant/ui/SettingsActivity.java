@@ -24,6 +24,7 @@ public class SettingsActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_settings);
+        SystemBars.applyInsets(findViewById(android.R.id.content));
         swEnabled = findViewById(R.id.swEnabled);
         swDetail = findViewById(R.id.swDetail);
         tvServiceState = findViewById(R.id.tvServiceState);

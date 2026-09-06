@@ -40,12 +40,15 @@ public class AssistantPickerActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_assistant_picker);
+        // P0-3：targetSdk 35 强制 edge-to-edge，全部内容必须从状态栏下方开始
+        SystemBars.applyInsets(findViewById(android.R.id.content));
         tvEmpty = findViewById(R.id.tvEmpty);
         tvNote = findViewById(R.id.tvNote);
         RecyclerView rv = findViewById(R.id.rvAssistants);
         rv.setLayoutManager(new LinearLayoutManager(this));
         adapter = new Adapter();
         rv.setAdapter(adapter);
+        findViewById(R.id.toolbar).setNavigationOnClickListener(v -> finish());
         load();
     }
 
@@ -56,7 +59,13 @@ public class AssistantPickerActivity extends AppCompatActivity {
             String current = ConfigStore.selectedPackage(AssistantPickerActivity.this);
             runOnUiThread(() -> {
                 adapter.setItems(candidates, current);
-                tvEmpty.setVisibility(candidates.isEmpty() ? View.VISIBLE : View.GONE);
+                if (candidates.isEmpty()) {
+                    // 空状态必须可见，不能整页留白（Issue #1 P0-3）
+                    tvEmpty.setText(R.string.picker_empty);
+                    tvEmpty.setVisibility(View.VISIBLE);
+                } else {
+                    tvEmpty.setVisibility(View.GONE);
+                }
             });
         });
     }

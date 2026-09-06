@@ -39,7 +39,7 @@ public final class AssistantCandidate {
         this.launchMethod = launchMethod;
         this.hasVoiceInteractionService = hasVoiceInteractionService;
         this.eligibilitySource = eligibilitySource == null || eligibilitySource.isEmpty()
-            ? "VoiceInteractionService + BIND_VOICE_INTERACTION"
+            ? "ACTION_ASSIST_VERIFIED"
             : eligibilitySource;
     }
 }

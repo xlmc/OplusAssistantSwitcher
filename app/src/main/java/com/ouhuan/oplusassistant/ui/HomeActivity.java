@@ -35,6 +35,7 @@ public class HomeActivity extends AppCompatActivity {
     private TextView tvScope;
     private TextView tvSystemAssistant;
     private TextView tvSystemAssistantSecondary;
+    private TextView tvPowerKeyOriginal;
     private TextView tvPowerTarget;
     private TextView tvPowerTargetSecondary;
     private TextView tvLastCall;
@@ -45,11 +46,14 @@ public class HomeActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_home);
+        // P0-3：targetSdk 35 强制 edge-to-edge，全部内容从状态栏下方开始
+        SystemBars.applyInsets(findViewById(android.R.id.content));
         tvModuleStatus = findViewById(R.id.tvModuleStatus);
         tvHookStatusSecondary = findViewById(R.id.tvHookStatusSecondary);
         tvScope = findViewById(R.id.tvScope);
         tvSystemAssistant = findViewById(R.id.tvSystemAssistant);
         tvSystemAssistantSecondary = findViewById(R.id.tvSystemAssistantSecondary);
+        tvPowerKeyOriginal = findViewById(R.id.tvPowerKeyOriginal);
         tvPowerTarget = findViewById(R.id.tvPowerTarget);
         tvPowerTargetSecondary = findViewById(R.id.tvPowerTargetSecondary);
         tvLastCall = findViewById(R.id.tvLastCall);
@@ -115,13 +119,22 @@ public class HomeActivity extends AppCompatActivity {
                 hookSecondary.append(" · ").append(getString(R.string.home_service_unbound));
             }
 
-            // ---- 系统默认助手卡：与 Hook 状态完全解耦（Issue #1 第四条） ----
+            // ---- 系统默认助手卡：仅标准 Android 状态（Issue #1 P0-1） ----
+            // 与 ColorOS 电源键原始目标、Hook 状态三者互不冒充。
             String assistantMain = systemDefault.describe();
-            String assistantSecondary;
-            if (systemDefault.isAvailable) {
-                assistantSecondary = describeSource(systemDefault.source);
-            } else {
-                assistantSecondary = getString(R.string.home_assistant_source_none);
+            String assistantSecondary = systemDefault.isAvailable
+                ? describeSource(systemDefault.source)
+                : getString(R.string.home_assistant_source_none);
+
+            // ColorOS 电源键原始目标：独立概念，仅作次级信息展示
+            String powerKeyLine = "";
+            String powerKeyPkg = systemDefault.powerKeyPackage();
+            if (!powerKeyPkg.isEmpty()
+                && !powerKeyPkg.equals(systemDefault.roleHolderPackage)) {
+                String label = describePackageLabel(powerKeyPkg);
+                powerKeyLine = powerKeyPkg.equals(label)
+                    ? getString(R.string.home_power_key_original_raw)
+                    : getString(R.string.home_power_key_original_format, label);
             }
 
             // ---- 电源键当前助手卡 ----
@@ -157,6 +170,7 @@ public class HomeActivity extends AppCompatActivity {
             String fModuleMain = moduleMain;
             String fHookSecondary = hookSecondary.toString();
             String fAssistantSecondary = assistantSecondary;
+            String fPowerKeyLine = powerKeyLine;
             String fTargetMain = targetMain;
             String fTargetSecondary = targetSecondary;
             String fLastMain = lastMain;
@@ -166,6 +180,12 @@ public class HomeActivity extends AppCompatActivity {
                 tvHookStatusSecondary.setText(fHookSecondary);
                 tvSystemAssistant.setText(assistantMain);
                 tvSystemAssistantSecondary.setText(fAssistantSecondary);
+                if (fPowerKeyLine.isEmpty()) {
+                    tvPowerKeyOriginal.setVisibility(android.view.View.GONE);
+                } else {
+                    tvPowerKeyOriginal.setVisibility(android.view.View.VISIBLE);
+                    tvPowerKeyOriginal.setText(fPowerKeyLine);
+                }
                 tvPowerTarget.setText(fTargetMain);
                 tvPowerTargetSecondary.setText(fTargetSecondary);
                 tvLastCall.setText(fLastMain);
@@ -197,9 +217,6 @@ public class HomeActivity extends AppCompatActivity {
     private String describeSource(String source) {
         if (SystemAssistantState.SOURCE_ROLE.equals(source)) {
             return getString(R.string.home_assistant_source_role);
-        }
-        if (SystemAssistantState.SOURCE_ASSIST_COMPONENT.equals(source)) {
-            return getString(R.string.home_assistant_source_component);
         }
         if (SystemAssistantState.SOURCE_VIS.equals(source)) {
             return getString(R.string.home_assistant_source_vis);

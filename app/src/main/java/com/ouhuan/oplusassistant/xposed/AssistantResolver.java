@@ -54,8 +54,9 @@ public final class AssistantResolver {
     }
 
     /**
-     * 读取当前系统默认助手（开发书 5.1）：
-     * 优先 ROLE_ASSISTANT 持有者，交叉验证 VoiceInteractionService 组件。
+     * 读取当前标准系统默认助手（开发书 5.1；Issue #1 P0-1）：
+     * 只反映 ROLE_ASSISTANT 持有者 / VoiceInteractionService 配置；
+     * ColorOS 电源键助手组件仅保留原始值（assistComponent），不冒充标准状态。
      */
     public SystemAssistantState readSystemDefault(Context context) {
         String roleHolder = null;
@@ -69,40 +70,34 @@ public final class AssistantResolver {
         } catch (Throwable ignored) {
             // 部分 ROM 限制该查询；退化到 VIS 交叉验证
         }
-        String vis = null;
-        try {
-            vis = Settings.Secure.getString(context.getContentResolver(),
-                "voice_interaction_service");
-        } catch (Throwable ignored) {
-        }
-        String assistComponent = null;
-        try {
-            assistComponent = Settings.Secure.getString(context.getContentResolver(),
-                "assistant");
-        } catch (Throwable ignored) {
-        }
-        String label = "";
+        String vis = readSecure(context, "voice_interaction_service");
+        String assistComponent = readSecure(context, "assistant");
+
         String primaryPkg = roleHolder != null && !roleHolder.isEmpty()
             ? roleHolder
-            : (vis != null && !vis.isEmpty()
-                ? packageOf(vis)
-                : packageOf(assistComponent));
-        if (primaryPkg != null && !primaryPkg.isEmpty()) {
-            label = loadLabel(context, primaryPkg);
-        }
+            : packageOf(vis);
+        String label = primaryPkg != null && !primaryPkg.isEmpty()
+            ? loadLabel(context, primaryPkg) : "";
         boolean available = primaryPkg != null && !primaryPkg.isEmpty();
         String source;
         if (roleHolder != null && !roleHolder.isEmpty()) {
             source = SystemAssistantState.SOURCE_ROLE;
-        } else if (vis != null && !vis.isEmpty()) {
+        } else if (available) {
             source = SystemAssistantState.SOURCE_VIS;
-        } else if (assistComponent != null && !assistComponent.isEmpty()) {
-            source = SystemAssistantState.SOURCE_ASSIST_COMPONENT;
         } else {
             source = SystemAssistantState.SOURCE_NONE;
         }
         return new SystemAssistantState(roleHolder, vis, assistComponent, label,
             available, source);
+    }
+
+    private String readSecure(Context context, String key) {
+        try {
+            String value = Settings.Secure.getString(context.getContentResolver(), key);
+            return value == null ? "" : value.trim();
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     private String loadLabel(Context context, String packageName) {
@@ -116,7 +111,15 @@ public final class AssistantResolver {
     }
 
     /**
-     * 验证用户选择并解析可启动入口（开发书 5.2 筛选顺序、7 启动规范）。
+     * 验证用户选择并解析可启动入口（开发书 5.2 筛选顺序、7 启动规范；
+     * Issue #1 P0-2 多来源资格）。
+     *
+     * 资格判定（任一成立即视为系统级助手，避免 false negative）：
+     * 1. 包内存在要求 BIND_VOICE_INTERACTION 的 VoiceInteractionService；
+     * 2. 该包是当前 ROLE_ASSISTANT 持有者；
+     * 3. 该包是当前已配置助手组件（voice_interaction_service / assistant）。
+     * 仅响应 ACTION_ASSIST 而无任何系统级助手信号的普通应用（如 Firefox）
+     * 不具备资格，保持 ASSISTANT_NOT_ELIGIBLE 静默结束。
      */
     public ResolveOutcome resolve(Context context, RuntimeConfig.Snapshot snapshot,
                                   SystemAssistantState systemDefault) {
@@ -139,24 +142,16 @@ public final class AssistantResolver {
                 ErrorCodes.ASSISTANT_SERVICE_DISABLED, null);
         }
 
-        // 选择目标已成为系统默认助手：角色状态与预期不一致，不接管（错误码 12）。
-        if (isSamePackage(systemDefault == null ? null : systemDefault.roleHolderPackage, pkg)) {
-            return ResolveOutcome.failure(LaunchResult.ROLE_MISMATCH,
-                ErrorCodes.ROLE_MISMATCH, "selected assistant became role holder");
-        }
-        if (isSamePackage(systemDefault == null ? null
-            : packageOf(systemDefault.voiceInteractionService), pkg)) {
-            return ResolveOutcome.failure(LaunchResult.ROLE_MISMATCH,
-                ErrorCodes.ROLE_MISMATCH, "selected assistant became active VIS");
-        }
-
-        // 资格强校验（Issue #1）：必须仍声明 VoiceInteractionService 且要求
-        // BIND_VOICE_INTERACTION；仅响应 ACTION_ASSIST 的普通应用不具备资格。
         boolean hasVis = hasEligibleVoiceInteractionService(pm, pkg);
-        if (!hasVis) {
+        SystemAssistantState sys = systemDefault;
+        boolean isRoleHolder = sys != null && isSamePackage(sys.roleHolderPackage, pkg);
+        boolean isActiveVis = sys != null && isSamePackage(packageOf(sys.voiceInteractionService), pkg);
+        boolean isConfiguredAssistant = sys != null
+            && isSamePackage(packageOf(sys.assistComponent), pkg);
+        if (!hasVis && !isRoleHolder && !isActiveVis && !isConfiguredAssistant) {
             return ResolveOutcome.failure(LaunchResult.RESOLVE_FAILED,
                 ErrorCodes.ASSISTANT_NOT_ELIGIBLE,
-                "no VoiceInteractionService with BIND_VOICE_INTERACTION");
+                "no system-level assistant signal (VIS / role holder / configured component)");
         }
 
         String storedComponent = snapshot.selectedComponent;
@@ -184,7 +179,7 @@ public final class AssistantResolver {
             entryMethod = scanMethod;
         } else if (storedComponent != null && !storedComponent.isEmpty()
             && isActivityResolvable(pm, storedComponent)) {
-            // VIS 服务仍在而 Activity 入口发生漂移时，退回用户保存的组件
+            // 入口发生漂移时，退回用户保存的组件
             entryComponent = storedComponent;
             entryMethod = Constants.LAUNCH_METHOD_ASSIST;
         } else if (storedComponent != null && !storedComponent.isEmpty()) {
@@ -253,16 +248,16 @@ public final class AssistantResolver {
         return a != null && !a.isEmpty() && a.equals(b);
     }
 
-    private String packageOf(String voiceInteractionService) {
-        if (voiceInteractionService == null || voiceInteractionService.isEmpty()) {
+    private String packageOf(String flattened) {
+        if (flattened == null || flattened.isEmpty()) {
             return "";
         }
-        ComponentName cn = ComponentName.unflattenFromString(voiceInteractionService);
+        ComponentName cn = ComponentName.unflattenFromString(flattened);
         if (cn != null) {
             return cn.getPackageName();
         }
-        return voiceInteractionService.contains("/")
-            ? voiceInteractionService.substring(0, voiceInteractionService.indexOf('/'))
-            : voiceInteractionService;
+        return flattened.contains("/")
+            ? flattened.substring(0, flattened.indexOf('/'))
+            : flattened;
     }
 }
