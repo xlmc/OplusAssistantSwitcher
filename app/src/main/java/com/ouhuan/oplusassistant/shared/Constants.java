@@ -15,6 +15,30 @@ public final class Constants {
     /** Hook 侧 → App 侧日志广播 Action。 */
     public static final String ACTION_LOG_EVENT = "com.ouhuan.oplusassistant.action.LOG_EVENT";
 
+    /** Hook 侧 → App 侧状态广播 Action（CurrentOplusAssistant 回传，Issue #1 评论 4）。 */
+    public static final String ACTION_STATE_REPORT = "com.ouhuan.oplusassistant.action.STATE_REPORT";
+
+    /** 状态广播字段：当前实际助手（system_server 解析）。 */
+    public static final String STATE_CURRENT_NAME = "state_current_name";
+    public static final String STATE_CURRENT_PACKAGE = "state_current_package";
+    public static final String STATE_CURRENT_COMPONENT = "state_current_component";
+    public static final String STATE_CURRENT_SOURCE = "state_current_source";
+    public static final String STATE_FROM_SYSTEM_SERVER = "state_from_system_server";
+    public static final String STATE_ROLE_HOLDER = "state_role_holder";
+    public static final String STATE_VOICE_INTERACTION_SERVICE = "state_voice_interaction_service";
+    public static final String STATE_TIMESTAMP = "state_timestamp";
+    /** 状态广播附加：system_server 侧扫描的候选列表（StringArrayList，序列化条目）。 */
+    public static final String STATE_CANDIDATES = "state_candidates";
+
+    /** OEM 助手组件包名前缀（用于 system_server 侧发现小布等内置语音服务；非固定包名白名单）。 */
+    public static final String[] OEM_ASSISTANT_PACKAGE_PREFIXES = {
+        "com.coloros.",
+        "com.heytap.",
+        "com.oplus.",
+        "com.oppo.",
+        "com.oneplus."
+    };
+
     /** Remote Preferences 分组名：App 侧写入，Hook 侧只读同步。 */
     public static final String PREFS_GROUP = "ouhuan_config";
 

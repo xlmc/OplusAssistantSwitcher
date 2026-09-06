@@ -125,8 +125,9 @@ public final class DiagnosticReporter {
         }
     }
 
-    /** AMS.systemReady 后补发缓冲事件；此时广播通道已可用。 */
-    public void installFlushHook(XposedInterface xposed, ClassLoader classLoader) {
+    /** AMS.systemReady 后补发缓冲事件，并触发一次性系统助手状态上报；此时广播通道已可用。 */
+    public void installFlushHook(XposedInterface xposed, ClassLoader classLoader,
+                                 Runnable onSystemReady) {
         try {
             Class<?> ams = Class.forName("com.android.server.am.ActivityManagerService",
                 false, classLoader);
@@ -136,12 +137,49 @@ public final class DiagnosticReporter {
                     xposed.hook(method).intercept(chain -> {
                         chain.proceed();
                         flush();
+                        if (onSystemReady != null) {
+                            try {
+                                onSystemReady.run();
+                            } catch (Throwable t) {
+                                safeLog("onSystemReady callback failed: " + t);
+                            }
+                        }
                         return null;
                     });
                 }
             }
         } catch (Throwable t) {
             safeLog("installFlushHook failed: " + t);
+        }
+    }
+
+    /**
+     * 状态上报（Issue #1 评论 4）：把 system_server 侧解析的
+     * CurrentOplusAssistant 与候选列表广播给模块 App。
+     * 无上下文或发送失败仅记录 Xposed 日志，状态不是日志事件、不进缓冲。
+     */
+    public void reportState(java.util.Map<String, String> fields,
+                            java.util.List<String> candidateEntries) {
+        Context context = contextProvider == null ? null : contextProvider.get();
+        if (context == null) {
+            safeLog("reportState skipped: no system context");
+            return;
+        }
+        try {
+            Intent intent = new Intent(Constants.ACTION_STATE_REPORT);
+            intent.setPackage(modulePackage);
+            if (fields != null) {
+                for (java.util.Map.Entry<String, String> entry : fields.entrySet()) {
+                    intent.putExtra(entry.getKey(), entry.getValue() == null ? "" : entry.getValue());
+                }
+            }
+            if (candidateEntries != null) {
+                intent.putStringArrayListExtra(Constants.STATE_CANDIDATES,
+                    new ArrayList<>(candidateEntries));
+            }
+            context.sendBroadcast(intent);
+        } catch (Throwable t) {
+            safeLog("reportState failed: " + t);
         }
     }
 

@@ -10,19 +10,30 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.provider.Settings;
 
+import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
+import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
 import com.ouhuan.oplusassistant.shared.ErrorCodes;
 import com.ouhuan.oplusassistant.shared.LaunchResult;
 import com.ouhuan.oplusassistant.shared.LaunchTarget;
 import com.ouhuan.oplusassistant.shared.RoleHolders;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 读取系统默认助手、验证用户所选目标是否仍可用（开发书 4.1 / 5）。
  * 仅做包级/组件级轻量查询，禁止全量 PackageManager 扫描（开发书 6.3）。
+ *
+ * Issue #1 评论 4：本类运行于 system_server，拥有完整包可见性，
+ * 是「当前手机实际助手」（CurrentOplusAssistant）与候选列表的
+ * 最高可信来源；结果经状态广播回传 App。
  */
 public final class AssistantResolver {
 
@@ -52,6 +63,274 @@ public final class AssistantResolver {
             return new ResolveOutcome(result, failureCode, summary, null);
         }
     }
+
+    /** 入口解析结果：组件 + 组件自身 label（用于 UI 显示产品名而非包名）。 */
+    private static final class EntryResult {
+        final String component;
+        final String label;
+        final String method;
+
+        EntryResult(String component, String label, String method) {
+            this.component = component;
+            this.label = label;
+            this.method = method;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 当前手机实际助手（CurrentOplusAssistant）
+    // ------------------------------------------------------------------
+
+    /**
+     * 以 system_server 上下文解析「当前手机实际助手」。
+     * 可信来源优先级（Issue #1 评论 4）：
+     * 1. 电源键原始目标组件（Settings.Secure assistant，厂商电源键配置）；
+     * 2. OEM 语音服务（com.coloros / com.heytap / com.oplus / com.oppo /
+     *    com.oneplus 前缀包内声明 VoiceInteractionService，即小布等内置助手，
+     *    不写死具体包名，实际组件来自设备真实检测）；
+     * 3. 标准 ROLE_ASSISTANT 持有者。
+     * 显示名取组件自身 label（其次应用名），保证「Gemini 显示为 Gemini、
+     * 旧 Google Assistant 显示为 Google」由组件真实 label 决定。
+     */
+    public CurrentAssistantState readCurrentOplusAssistant(Context context) {
+        PackageManager pm = context.getPackageManager();
+        SystemAssistantState standard = readSystemDefault(context);
+
+        String name = "";
+        String pkg = "";
+        String component = "";
+        String source = CurrentAssistantState.SOURCE_NONE;
+
+        // 1) 电源键原始目标（最高可信）
+        String assistComponent = standard.assistComponent;
+        if (!assistComponent.isEmpty()) {
+            String label = loadComponentLabel(pm, assistComponent);
+            if (!label.isEmpty()) {
+                name = label;
+                pkg = packageOf(assistComponent);
+                component = assistComponent;
+                source = CurrentAssistantState.SOURCE_POWER_KEY;
+            }
+        }
+
+        // 2) OEM 内置语音服务（小布等）
+        if (CurrentAssistantState.SOURCE_NONE.equals(source)) {
+            ResolveInfo service = findOemVoiceService(pm);
+            if (service != null && service.serviceInfo != null) {
+                ServiceInfo info = service.serviceInfo;
+                CharSequence label = info.loadLabel(pm);
+                if (label == null || label.length() == 0) {
+                    label = appLabel(pm, info.packageName);
+                }
+                name = label == null ? "" : String.valueOf(label);
+                pkg = info.packageName;
+                component = new ComponentName(info.packageName, info.name).flattenToString();
+                source = CurrentAssistantState.SOURCE_OEM_VOICE_SERVICE;
+            }
+        }
+
+        // 3) 标准 ROLE_ASSISTANT 持有者
+        if (CurrentAssistantState.SOURCE_NONE.equals(source) && standard.isAvailable) {
+            name = standard.label;
+            pkg = standard.roleHolderPackage != null && !standard.roleHolderPackage.isEmpty()
+                ? standard.roleHolderPackage
+                : packageOf(standard.voiceInteractionService);
+            component = standard.voiceInteractionService == null ? "" : standard.voiceInteractionService;
+            source = CurrentAssistantState.SOURCE_ROLE_HOLDER;
+        }
+
+        return new CurrentAssistantState(name, pkg, component, source, true,
+            standard.roleHolderPackage, standard.voiceInteractionService,
+            System.currentTimeMillis());
+    }
+
+    /** 在完整包可见性下查找 OEM 内置语音服务（com.coloros / heytap / oplus / oppo / oneplus 前缀）。 */
+    private ResolveInfo findOemVoiceService(PackageManager pm) {
+        try {
+            List<ResolveInfo> services = pm.queryIntentServices(
+                new Intent(Constants.VIS_SERVICE_INTERFACE), PackageManager.GET_META_DATA);
+            ResolveInfo fallback = null;
+            for (ResolveInfo info : services) {
+                ServiceInfo service = info == null ? null : info.serviceInfo;
+                if (service == null || service.packageName == null) {
+                    continue;
+                }
+                if (!Constants.PERM_BIND_VOICE_INTERACTION.equals(service.permission)) {
+                    continue;
+                }
+                if (!isOemPackage(service.packageName)) {
+                    continue;
+                }
+                if (isAppEnabled(pm, service.packageName)) {
+                    return info;
+                }
+                if (fallback == null) {
+                    fallback = info;
+                }
+            }
+            return fallback;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private boolean isOemPackage(String pkg) {
+        for (String prefix : Constants.OEM_ASSISTANT_PACKAGE_PREFIXES) {
+            if (pkg.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
+    // 候选扫描（system_server 侧，完整包可见性）
+    // ------------------------------------------------------------------
+
+    /**
+     * system_server 侧候选扫描（与 App 侧 AssistantScanner 同一套规则）：
+     * 多来源并集（VIS+权限 / ROLE_ASSISTANT / 已配置助手组件）→ 排除
+     * （欧唤自身、内置小布名单、厂商预装的当前原始目标）→ 启用 →
+     * 入口可实际调用验证。仅做 intent 过滤查询，非全量扫描。
+     */
+    public List<AssistantCandidate> scanCandidates(Context context) {
+        PackageManager pm = context.getPackageManager();
+        Map<String, Set<String>> sources = new LinkedHashMap<>();
+
+        try {
+            List<ResolveInfo> services = pm.queryIntentServices(
+                new Intent(Constants.VIS_SERVICE_INTERFACE), PackageManager.GET_META_DATA);
+            for (ResolveInfo info : services) {
+                ServiceInfo service = info == null ? null : info.serviceInfo;
+                if (service == null || service.packageName == null) {
+                    continue;
+                }
+                if (Constants.PERM_BIND_VOICE_INTERACTION.equals(service.permission)) {
+                    addTag(sources, service.packageName, "VOICE_INTERACTION_SERVICE");
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        SystemAssistantState system = readSystemDefault(context);
+        if (system.roleHolderPackage != null && !system.roleHolderPackage.isEmpty()) {
+            addTag(sources, system.roleHolderPackage, "ROLE_ASSISTANT");
+        }
+        if (system.voiceInteractionService != null && !system.voiceInteractionService.isEmpty()) {
+            addTag(sources, packageOf(system.voiceInteractionService), "VOICE_INTERACTION_SERVICE");
+        }
+        if (system.assistComponent != null && !system.assistComponent.isEmpty()) {
+            addTag(sources, packageOf(system.assistComponent), "COLOROS_ASSISTANT_COMPONENT");
+        }
+
+        List<AssistantCandidate> result = new ArrayList<>();
+        for (Map.Entry<String, Set<String>> sourceEntry : sources.entrySet()) {
+            String candidatePkg = sourceEntry.getKey();
+            if (isExcluded(pm, candidatePkg, system) || !isAppEnabled(pm, candidatePkg)) {
+                continue;
+            }
+            EntryResult entry = findEntry(pm, Intent.ACTION_ASSIST, candidatePkg);
+            if (entry == null) {
+                entry = findEntry(pm, Intent.ACTION_VOICE_COMMAND, candidatePkg);
+            }
+            if (entry == null) {
+                continue;
+            }
+            StringBuilder eligibility = new StringBuilder();
+            for (String tag : sourceEntry.getValue()) {
+                if (eligibility.length() > 0) {
+                    eligibility.append(" + ");
+                }
+                eligibility.append(tag);
+            }
+            eligibility.append(" + ACTION_ASSIST_VERIFIED");
+            String label = entry.label.isEmpty() ? appLabel(pm, candidatePkg) : entry.label;
+            if (label.isEmpty()) {
+                label = candidatePkg;
+            }
+            result.add(new AssistantCandidate(candidatePkg, label, entry.component,
+                entry.method, sourceEntry.getValue().contains("VOICE_INTERACTION_SERVICE"),
+                eligibility.toString()));
+        }
+        Collections.sort(result, (a, b) -> a.label.compareToIgnoreCase(b.label));
+        return result;
+    }
+
+    private static void addTag(Map<String, Set<String>> sources, String pkg, String tag) {
+        if (pkg == null || pkg.isEmpty()) {
+            return;
+        }
+        Set<String> tags = sources.get(pkg);
+        if (tags == null) {
+            tags = new LinkedHashSet<>();
+            sources.put(pkg, tags);
+        }
+        tags.add(tag);
+    }
+
+    private boolean isExcluded(PackageManager pm, String pkg, SystemAssistantState system) {
+        if (pkg == null || pkg.isEmpty() || Constants.MODULE_PACKAGE.equals(pkg)) {
+            return true;
+        }
+        for (String builtIn : Constants.BUILT_IN_ASSISTANT_PACKAGES) {
+            if (builtIn.equals(pkg)) {
+                return true;
+            }
+        }
+        if (isVendorOriginalTarget(pm, pkg, system.roleHolderPackage)
+            || isVendorOriginalTarget(pm, pkg, packageOf(system.voiceInteractionService))
+            || isVendorOriginalTarget(pm, pkg, packageOf(system.assistComponent))) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isVendorOriginalTarget(PackageManager pm, String pkg, String currentPkg) {
+        if (currentPkg == null || currentPkg.isEmpty() || !currentPkg.equals(pkg)) {
+            return false;
+        }
+        try {
+            ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+            return (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
+                && (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean isAppEnabled(PackageManager pm, String pkg) {
+        try {
+            ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
+            return info.enabled;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private EntryResult findEntry(PackageManager pm, String action, String pkg) {
+        try {
+            Intent intent = new Intent(action);
+            intent.setPackage(pkg);
+            List<ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
+            if (!activities.isEmpty() && activities.get(0).activityInfo != null) {
+                ResolveInfo info = activities.get(0);
+                String component = new ComponentName(info.activityInfo.packageName,
+                    info.activityInfo.name).flattenToString();
+                CharSequence label = info.loadLabel(pm);
+                String method = Intent.ACTION_ASSIST.equals(action)
+                    ? Constants.LAUNCH_METHOD_ASSIST
+                    : Constants.LAUNCH_METHOD_VOICE_COMMAND;
+                return new EntryResult(component,
+                    label == null ? "" : String.valueOf(label), method);
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    // ------------------------------------------------------------------
+    // 标准系统默认助手（AndroidAssistantRoleState，仅供诊断）
+    // ------------------------------------------------------------------
 
     /**
      * 读取当前标准系统默认助手（开发书 5.1；Issue #1 P0-1）：
@@ -91,24 +370,9 @@ public final class AssistantResolver {
             available, source);
     }
 
-    private String readSecure(Context context, String key) {
-        try {
-            String value = Settings.Secure.getString(context.getContentResolver(), key);
-            return value == null ? "" : value.trim();
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    private String loadLabel(Context context, String packageName) {
-        try {
-            PackageManager pm = context.getPackageManager();
-            ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
-            return String.valueOf(pm.getApplicationLabel(info));
-        } catch (Throwable t) {
-            return "";
-        }
-    }
+    // ------------------------------------------------------------------
+    // 选择校验
+    // ------------------------------------------------------------------
 
     /**
      * 验证用户选择并解析可启动入口（开发书 5.2 筛选顺序、7 启动规范；
@@ -193,6 +457,10 @@ public final class AssistantResolver {
         return ResolveOutcome.success(new LaunchTarget(entryComponent, entryMethod));
     }
 
+    // ------------------------------------------------------------------
+    // 工具
+    // ------------------------------------------------------------------
+
     private List<ResolveInfo> queryActivities(PackageManager pm, String action, String pkg) {
         try {
             Intent intent = new Intent(action);
@@ -259,5 +527,53 @@ public final class AssistantResolver {
         return flattened.contains("/")
             ? flattened.substring(0, flattened.indexOf('/'))
             : flattened;
+    }
+
+    private String readSecure(Context context, String key) {
+        try {
+            String value = Settings.Secure.getString(context.getContentResolver(), key);
+            return value == null ? "" : value.trim();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /** 组件自身 label（Activity/Service），取不到回退应用名，再回退空串。 */
+    private String loadComponentLabel(PackageManager pm, String flattened) {
+        ComponentName cn = ComponentName.unflattenFromString(flattened);
+        if (cn == null) {
+            return "";
+        }
+        try {
+            CharSequence label = pm.getActivityInfo(cn, 0).loadLabel(pm);
+            if (label != null && label.length() > 0) {
+                return String.valueOf(label);
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            CharSequence label = pm.getServiceInfo(cn, 0).loadLabel(pm);
+            if (label != null && label.length() > 0) {
+                return String.valueOf(label);
+            }
+        } catch (Throwable ignored) {
+        }
+        return appLabel(pm, cn.getPackageName());
+    }
+
+    private String appLabel(PackageManager pm, String packageName) {
+        try {
+            ApplicationInfo info = pm.getApplicationInfo(packageName, 0);
+            CharSequence label = pm.getApplicationLabel(info);
+            return label == null ? "" : String.valueOf(label);
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private String loadLabel(Context context, String packageName) {
+        PackageManager pm = context.getPackageManager();
+        String label = appLabel(pm, packageName);
+        return label.isEmpty() ? packageName : label;
     }
 }

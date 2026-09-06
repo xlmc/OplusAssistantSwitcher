@@ -1,4 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#17334F</color>
+
+    <!-- 欧唤 V1 视觉基线（docs/ouhuan-ui-reference-v1.svg） -->
+    <color name="ouhuan_bg">#F6F0F8</color>
+    <color name="ouhuan_card">#FFFAFD</color>
+    <color name="ouhuan_card_stroke">#DED7E3</color>
+    <color name="ouhuan_accent">#6D53B7</color>
+    <color name="ouhuan_green">#1FB56B</color>
+    <color name="ouhuan_red">#D5443C</color>
+    <color name="ouhuan_text_main">#17141C</color>
+    <color name="ouhuan_text_body">#5E5867</color>
+    <color name="ouhuan_text_small">#777181</color>
+    <color name="ouhuan_icon_purple_bg">#EEE8FF</color>
+    <color name="ouhuan_icon_blue_bg">#E6F0FF</color>
+    <color name="ouhuan_icon_violet_bg">#EFE8FF</color>
+    <color name="ouhuan_icon_green_bg">#E4F7EE</color>
+    <color name="ouhuan_badge_bg">#EEE9FF</color>
+    <color name="ouhuan_note_bg">#F0EBFB</color>
+    <color name="ouhuan_outline">#8B8392</color>
 </resources>

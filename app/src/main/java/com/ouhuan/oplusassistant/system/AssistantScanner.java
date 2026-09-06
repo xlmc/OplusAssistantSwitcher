@@ -90,11 +90,9 @@ public final class AssistantScanner {
             }
 
             // ---- 4) 入口解析验证（ACTION_ASSIST_VERIFIED） ----
-            String entry = findEntry(pm, Intent.ACTION_ASSIST, pkg);
-            String method = Constants.LAUNCH_METHOD_ASSIST;
+            EntryResult entry = findEntry(pm, Intent.ACTION_ASSIST, pkg);
             if (entry == null) {
                 entry = findEntry(pm, Intent.ACTION_VOICE_COMMAND, pkg);
-                method = Constants.LAUNCH_METHOD_VOICE_COMMAND;
             }
             if (entry == null) {
                 // 无可实际调用的 Assistant 入口：不展示
@@ -110,7 +108,10 @@ public final class AssistantScanner {
                 eligibility.append(tag);
             }
             eligibility.append(" + ").append(TAG_ENTRY_VERIFIED);
-            result.add(new AssistantCandidate(pkg, loadLabel(pm, pkg), entry, method,
+            // UI 显示名：入口组件自身 label 优先（如 Gemini），应用名兜底；
+            // 不用包名决定产品名（Issue #1 评论 4）
+            String label = entry.label.isEmpty() ? loadLabel(pm, pkg) : entry.label;
+            result.add(new AssistantCandidate(pkg, label, entry.component, entry.method,
                 tags.contains(TAG_VIS), eligibility.toString()));
         }
         Collections.sort(result, (a, b) -> a.label.compareToIgnoreCase(b.label));
@@ -178,15 +179,30 @@ public final class AssistantScanner {
         }
     }
 
-    private String findEntry(PackageManager pm, String action, String pkg) {
+    /** 入口解析结果：组件 + 组件自身 label（UI 显示名优先取它，而非包名/应用名）。 */
+    private static final class EntryResult {
+        final String component;
+        final String label;
+
+        EntryResult(String component, String label) {
+            this.component = component;
+            this.label = label;
+        }
+    }
+
+    private EntryResult findEntry(PackageManager pm, String action, String pkg) {
         try {
             Intent intent = new Intent(action);
             intent.setPackage(pkg);
             List<ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
             if (!activities.isEmpty() && activities.get(0).activityInfo != null) {
-                return new android.content.ComponentName(
-                    activities.get(0).activityInfo.packageName,
-                    activities.get(0).activityInfo.name).flattenToString();
+                ResolveInfo info = activities.get(0);
+                String component = new android.content.ComponentName(
+                    info.activityInfo.packageName,
+                    info.activityInfo.name).flattenToString();
+                CharSequence label = info.loadLabel(pm);
+                return new EntryResult(component,
+                    label == null ? "" : String.valueOf(label));
             }
         } catch (Throwable ignored) {
         }

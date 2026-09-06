@@ -56,6 +56,7 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.ouhuan.oplusassistant.action.LOG_EVENT" />
+                <action android:name="com.ouhuan.oplusassistant.action.STATE_REPORT" />
             </intent-filter>
         </receiver>
     </application>

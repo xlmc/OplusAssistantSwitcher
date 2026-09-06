@@ -4,55 +4,64 @@
     <string name="app_english_name">Oplus Assistant Switcher</string>
     <string name="app_full_name">欧唤 · Oplus Assistant Switcher</string>
     <string name="home_version_format">欧唤 v%1$s</string>
+    <string name="home_subtitle">让电源键，唤醒你想要的助手</string>
+    <string name="home_scope_line">作用域：system（仅系统框架）</string>
 
     <string name="picker_title">选择助手</string>
     <string name="logs_title">日志</string>
     <string name="diagnostics_title">诊断信息</string>
     <string name="settings_title">设置</string>
 
+    <!-- 首页：模块状态卡 -->
     <string name="home_module_status">模块状态</string>
     <string name="home_module_active">已生效</string>
     <string name="home_module_inactive">未生效</string>
     <string name="home_module_enabled_wait_reboot">已启用（重启后生效）</string>
     <string name="home_module_disabled">未启用</string>
     <string name="home_service_unbound">LSPosed 服务未连接，设置暂不生效</string>
-    <string name="home_hook_status_format">Hook 状态：%1$s</string>
-    <string name="home_scope_format">作用域：%1$s</string>
-    <string name="home_scope_value">system</string>
+    <string name="home_hook_status_format">Hook：%1$s</string>
     <string name="home_hook_not_active">未生效（HOOK_NOT_ACTIVE）</string>
-    <string name="hook_ok">正常</string>
+    <string name="hook_ok">正常运行</string>
     <string name="hook_failed">异常</string>
     <string name="hook_target_missing">目标未找到</string>
     <string name="hook_rom_unsupported">ROM 不支持</string>
     <string name="hook_initializing">初始化中</string>
+
+    <!-- 首页：当前系统默认助手卡（system_server 解析的当前实际助手） -->
     <string name="home_system_assistant">当前系统默认助手</string>
-    <string name="home_assistant_source_role">来源：ROLE_ASSISTANT</string>
-    <string name="home_assistant_source_vis">来源：VoiceInteractionService</string>
-    <string name="home_assistant_source_none">未设置标准系统助手（未检测到 ROLE_ASSISTANT / VoiceInteractionService）</string>
-    <string name="home_power_key_original_format">ColorOS 电源键原始目标：%1$s（来自系统电源键助手组件，非标准助手角色）</string>
-    <string name="home_power_key_original_raw">ColorOS 电源键原始目标：来自系统电源键助手组件（无法解析应用名）</string>
+    <string name="home_assistant_badge">系统助手</string>
+    <string name="home_assistant_pending">等待 system_server 解析</string>
+    <string name="home_assistant_pending_hint">启用模块并重启后将显示当前系统实际助手</string>
+    <string name="home_assistant_unrecognized">未识别（当前系统未暴露助手信息）</string>
+
+    <!-- 首页：0.5 秒电源键当前助手卡 -->
     <string name="home_power_target">0.5 秒电源键当前助手</string>
     <string name="home_target_not_taken_over">未接管（系统原始目标）</string>
     <string name="home_target_secondary_disabled">模块关闭时电源键执行系统原逻辑</string>
     <string name="home_target_none_selected">未选择</string>
-    <string name="home_target_secondary_none">触发后将静默结束，不执行小布</string>
+    <string name="home_target_pick_hint">点击下方按钮选择助手并接管</string>
+    <string name="home_target_secondary_taken_over">0.5 秒电源键将唤醒所选助手</string>
+    <string name="btn_pick_assistant">选择助手  ›</string>
+
+    <!-- 首页：最近一次调用卡 -->
     <string name="home_recent_call">最近一次调用</string>
     <string name="home_last_call_none">暂无调用记录</string>
     <string name="home_last_call_success">成功</string>
     <string name="home_last_call_failure">失败</string>
-    <string name="btn_pick_assistant">选择助手</string>
     <string name="btn_view_logs">查看日志</string>
     <string name="btn_diagnostics">诊断信息</string>
-    <string name="btn_settings">设置</string>
+    <string name="btn_settings">⚙</string>
 
+    <!-- 助手选择页 -->
+    <string name="picker_subtitle">请选择要通过 0.5 秒电源键唤醒的语音助手</string>
     <string name="picker_empty">未检测到可用的第三方语音助手</string>
     <string name="picker_scanning">正在扫描可用语音助手…</string>
-    <string name="picker_hint">请选择要由 0.5 秒电源键唤醒的语音助手</string>
+    <string name="picker_note_main">ⓘ 仅显示已安装且可作为系统语音助手使用的应用</string>
+    <string name="picker_note_sub">未找到想要的助手？请先安装对应应用</string>
     <string name="picker_note_unsaved">设置未能写入：LSPosed 服务未连接</string>
-    <string name="picker_source_play">通过 Google Play 安装</string>
-    <string name="picker_source_system">系统预装</string>
-    <string name="picker_source_unknown">来源未知</string>
+    <string name="btn_confirm">确定</string>
 
+    <!-- 日志页 -->
     <string name="logs_only_failures">仅显示失败</string>
     <string name="btn_copy_all">复制完整诊断</string>
     <string name="btn_clear">清空日志</string>
@@ -62,6 +71,7 @@
     <string name="logs_no_detail">（无附加字段）</string>
     <string name="toast_copied">已复制</string>
 
+    <!-- 诊断信息页 -->
     <string name="diagnostics_device">设备信息</string>
     <string name="diagnostics_android">Android</string>
     <string name="diagnostics_coloros">ColorOS / OPlus 版本</string>
@@ -71,7 +81,10 @@
     <string name="diagnostics_service_unbound">未连接（模块未启用或 LSPosed 未安装）</string>
     <string name="diagnostics_hook">Hook 状态详情</string>
     <string name="diagnostics_hook_tech">Hook 技术详情</string>
-    <string name="diagnostics_assistant_detail">系统默认助手详情</string>
+    <string name="diagnostics_assistant_detail">标准系统助手详情（AndroidAssistantRoleState）</string>
+    <string name="diagnostics_std_assistant">标准状态：</string>
+    <string name="diagnostics_system_server_state">系统助手状态（system_server 解析 / CurrentOplusAssistant）</string>
+    <string name="diagnostics_ss_none">暂未收到 system_server 状态（启用模块并重启后自动更新）</string>
     <string name="diagnostics_candidates">助手候选与资格来源</string>
     <string name="diagnostics_selection_detail">选择详情</string>
     <string name="diagnostics_selection">当前选择</string>
@@ -80,6 +93,7 @@
     <string name="diagnostics_failures">失败数</string>
     <string name="btn_refresh">刷新</string>
 
+    <!-- 设置页 -->
     <string name="settings_enable_module">启用模块</string>
     <string name="settings_enable_module_hint">关闭后 0.5 秒电源键恢复系统原行为</string>
     <string name="settings_detail">详细诊断模式</string>

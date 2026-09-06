@@ -37,19 +37,22 @@ public final class ColorOS16PowerAssistantHook {
     private final ContextProvider contextProvider;
     private final AssistantResolver resolver;
     private final AssistantLauncher launcher;
+    private final Runnable onRouteComplete;
 
     private ColorOS16PowerAssistantHook(XposedInterface xposed,
                                         RuntimeConfig runtimeConfig,
                                         DiagnosticReporter reporter,
                                         ContextProvider contextProvider,
                                         AssistantResolver resolver,
-                                        AssistantLauncher launcher) {
+                                        AssistantLauncher launcher,
+                                        Runnable onRouteComplete) {
         this.xposed = xposed;
         this.runtimeConfig = runtimeConfig;
         this.reporter = reporter;
         this.contextProvider = contextProvider;
         this.resolver = resolver;
         this.launcher = launcher;
+        this.onRouteComplete = onRouteComplete;
     }
 
     /** 识别 ROM：OPlus 属性或厂商名命中才安装 Hook，否则记录 ROM_UNSUPPORTED（开发书 3.1）。 */
@@ -75,14 +78,15 @@ public final class ColorOS16PowerAssistantHook {
         return new RomPolicy(false, manufacturer);
     }
 
-    /** 在 system_server 安装 0x3F3 Hook；任何失败均不外抛。 */
+    /** 在 system_server 安装 0x3F3 Hook；任何失败均不外抛。onRouteComplete 在每次接管路由结束后回调（可空）。 */
     public static void install(XposedInterface xposed,
                                ClassLoader classLoader,
                                RuntimeConfig runtimeConfig,
                                DiagnosticReporter reporter,
                                ContextProvider contextProvider,
                                AssistantResolver resolver,
-                               AssistantLauncher launcher) {
+                               AssistantLauncher launcher,
+                               Runnable onRouteComplete) {
         RomPolicy rom = detectRom();
         if (!rom.supported) {
             reporter.hookEvent(Constants.EV_ROM_UNSUPPORTED,
@@ -91,7 +95,8 @@ public final class ColorOS16PowerAssistantHook {
         }
 
         ColorOS16PowerAssistantHook hook = new ColorOS16PowerAssistantHook(
-            xposed, runtimeConfig, reporter, contextProvider, resolver, launcher);
+            xposed, runtimeConfig, reporter, contextProvider, resolver, launcher,
+            onRouteComplete);
         try {
             Class<?> owner = Class.forName(Constants.HOOK_CLASS, false, classLoader);
             reporter.hookEvent(Constants.EV_HOOK_CLASS_FOUND, Constants.HOOK_CLASS);
@@ -141,6 +146,13 @@ public final class ColorOS16PowerAssistantHook {
             reportTerminal(snapshot, Constants.EV_LAUNCH_EXCEPTION,
                 LaunchResult.LAUNCH_EXCEPTION, ErrorCodes.UNKNOWN_ERROR,
                 summarize(t, snapshot.detailDiagnostics));
+        }
+        if (onRouteComplete != null) {
+            try {
+                onRouteComplete.run();
+            } catch (Throwable ignored) {
+                // 状态上报失败不影响路由结果
+            }
         }
         return null;
     }

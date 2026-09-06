@@ -9,10 +9,12 @@ import com.ouhuan.oplusassistant.R;
 import com.ouhuan.oplusassistant.app.AssistApp;
 import com.ouhuan.oplusassistant.app.ConfigStore;
 import com.ouhuan.oplusassistant.data.AppExecutors;
+import com.ouhuan.oplusassistant.data.AssistantStateStore;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
+import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 import com.ouhuan.oplusassistant.system.AssistantScanner;
 import com.ouhuan.oplusassistant.system.DeviceProps;
@@ -36,6 +38,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
     private TextView tvHook;
     private TextView tvHookTech;
     private TextView tvAssistantDetail;
+    private TextView tvSystemServer;
     private TextView tvCandidates;
     private TextView tvSelection;
     private TextView tvStats;
@@ -51,6 +54,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
         tvHook = findViewById(R.id.tvHook);
         tvHookTech = findViewById(R.id.tvHookTech);
         tvAssistantDetail = findViewById(R.id.tvAssistantDetail);
+        tvSystemServer = findViewById(R.id.tvSystemServer);
         tvCandidates = findViewById(R.id.tvCandidates);
         tvSelection = findViewById(R.id.tvSelection);
         tvStats = findViewById(R.id.tvStats);
@@ -100,21 +104,54 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 + "\nscope=system";
 
             SystemAssistantState systemDefault = new SystemAssistantReader().read(this);
-            String assistantDetail = systemDefault.describe()
+            String assistantDetail = getString(R.string.diagnostics_std_assistant)
+                + "\n" + systemDefault.describe()
                 + "\nsource=" + systemDefault.source
                 + "\nroleHolder=" + orDash(systemDefault.roleHolderPackage)
                 + "\nvoiceInteractionService=" + orDash(systemDefault.voiceInteractionService)
                 + "\nassistComponent(ColorOS 电源键原始目标)="
                 + orDash(systemDefault.assistComponent);
 
-            // 候选清单与每个候选的资格来源（仅诊断页展示，Issue #1 P0-2）
+            // system_server 解析的「当前手机实际助手」（CurrentOplusAssistant，最高可信来源）
+            CurrentAssistantState current = AssistantStateStore.current(this);
+            String systemServer;
+            if (current == null) {
+                systemServer = getString(R.string.diagnostics_ss_none);
+            } else {
+                systemServer = "displayName=" + orDash(current.displayName)
+                    + "\npackageName=" + orDash(current.packageName)
+                    + "\ncomponentName=" + orDash(current.componentName)
+                    + "\nsource=" + current.source
+                    + "\nresolvedFromSystemServer=" + current.resolvedFromSystemServer
+                    + "\nroleHolder=" + orDash(current.roleHolderPackage)
+                    + "\nvoiceInteractionService=" + orDash(current.voiceInteractionService)
+                    + "\nupdatedAt=" + (current.timestamp > 0
+                        ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                            .format(new Date(current.timestamp))
+                        : "-");
+            }
+
+            // 候选清单与每个候选的资格来源（本地扫描 ∪ system_server 上报，仅诊断页展示）
             StringBuilder candidates = new StringBuilder();
             List<AssistantCandidate> scanned =
                 new AssistantScanner().scan(this);
-            if (scanned.isEmpty()) {
+            List<AssistantCandidate> merged = new java.util.ArrayList<>(scanned);
+            for (AssistantCandidate remote : AssistantStateStore.candidates(this)) {
+                boolean present = false;
+                for (AssistantCandidate localCandidate : merged) {
+                    if (localCandidate.packageName.equals(remote.packageName)) {
+                        present = true;
+                        break;
+                    }
+                }
+                if (!present) {
+                    merged.add(remote);
+                }
+            }
+            if (merged.isEmpty()) {
                 candidates.append(getString(R.string.picker_empty));
             } else {
-                for (AssistantCandidate c : scanned) {
+                for (AssistantCandidate c : merged) {
                     if (candidates.length() > 0) {
                         candidates.append("\n\n");
                     }
@@ -148,6 +185,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String finalHook = hook;
             String finalHookTech = hookTech;
             String finalAssistantDetail = assistantDetail;
+            String finalSystemServer = systemServer;
             String finalCandidates = candidates.toString();
             String finalSelection = selection;
             String finalStats = stats;
@@ -157,6 +195,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 tvHook.setText(finalHook);
                 tvHookTech.setText(finalHookTech);
                 tvAssistantDetail.setText(finalAssistantDetail);
+                tvSystemServer.setText(finalSystemServer);
                 tvCandidates.setText(finalCandidates);
                 tvSelection.setText(finalSelection);
                 tvStats.setText(finalStats);

@@ -7,18 +7,21 @@ import android.os.Bundle;
 
 import com.ouhuan.oplusassistant.shared.Constants;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Hook 侧日志广播接收器（开发书 8.4：异步上报 → App 侧持久化）。
+ * Hook 侧广播接收器（开发书 8.4；Issue #1 评论 4 状态回传）。
+ * LOG_EVENT：日志事件 → Room 持久化；
+ * STATE_REPORT：system_server 解析的当前实际助手与候选列表 → AssistantStateStore。
  * exported=false，仅 system(uid 1000) 与模块自身可送达。
  */
 public class LogEntryReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent == null || !Constants.ACTION_LOG_EVENT.equals(intent.getAction())) {
+        if (intent == null || intent.getAction() == null) {
             return;
         }
         Bundle extras = intent.getExtras();
@@ -33,6 +36,23 @@ public class LogEntryReceiver extends BroadcastReceiver {
             }
         }
         final PendingResult result = goAsync();
+        if (Constants.ACTION_STATE_REPORT.equals(intent.getAction())) {
+            final ArrayList<String> candidates =
+                intent.getStringArrayListExtra(Constants.STATE_CANDIDATES);
+            AppExecutors.io().execute(() -> {
+                try {
+                    AssistantStateStore.apply(context, data, candidates);
+                } catch (Throwable ignored) {
+                } finally {
+                    result.finish();
+                }
+            });
+            return;
+        }
+        if (!Constants.ACTION_LOG_EVENT.equals(intent.getAction())) {
+            result.finish();
+            return;
+        }
         AppExecutors.io().execute(() -> {
             try {
                 LogEntity entity = LogEntity.fromMap(data);

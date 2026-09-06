@@ -3,30 +3,34 @@ package com.ouhuan.oplusassistant.ui;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import com.ouhuan.oplusassistant.R;
 import com.ouhuan.oplusassistant.app.AssistApp;
 import com.ouhuan.oplusassistant.app.ConfigStore;
 import com.ouhuan.oplusassistant.data.AppExecutors;
+import com.ouhuan.oplusassistant.data.AssistantStateStore;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
 import com.ouhuan.oplusassistant.data.LogEntity;
 import com.ouhuan.oplusassistant.shared.Constants;
+import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
 import com.ouhuan.oplusassistant.shared.LaunchResult;
-import com.ouhuan.oplusassistant.shared.SystemAssistantState;
-import com.ouhuan.oplusassistant.system.SystemAssistantReader;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
 /**
- * 首页（开发书 9；Issue #1 新信息层级）：
- * 模块状态 → 当前系统默认助手 → 0.5 秒电源键当前助手 → 最近一次调用 →
- * 底部操作与版本页脚。包名/组件名等开发信息一律移至诊断页。
+ * 首页（开发书 9；Issue #1 评论 4 视觉基线 docs/ouhuan-ui-reference-v1.svg）：
+ * 标题/副标题 → 模块状态卡 → 当前系统默认助手卡（system_server 解析的
+ * CurrentOplusAssistant，小布等 OEM 助手可直接识别）→ 0.5 秒电源键当前助手卡
+ * （含渐变主按钮）→ 最近一次调用卡 → 底部查看日志/诊断信息与版本页脚。
+ * 包名/组件名等开发信息一律移至诊断页。
  */
 public class HomeActivity extends AppCompatActivity {
 
@@ -35,12 +39,13 @@ public class HomeActivity extends AppCompatActivity {
     private TextView tvScope;
     private TextView tvSystemAssistant;
     private TextView tvSystemAssistantSecondary;
-    private TextView tvPowerKeyOriginal;
+    private TextView tvAssistantBadge;
     private TextView tvPowerTarget;
     private TextView tvPowerTargetSecondary;
     private TextView tvLastCall;
     private TextView tvLastCallSecondary;
     private TextView tvVersion;
+    private TextView tvEnglishName;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,22 +58,23 @@ public class HomeActivity extends AppCompatActivity {
         tvScope = findViewById(R.id.tvScope);
         tvSystemAssistant = findViewById(R.id.tvSystemAssistant);
         tvSystemAssistantSecondary = findViewById(R.id.tvSystemAssistantSecondary);
-        tvPowerKeyOriginal = findViewById(R.id.tvPowerKeyOriginal);
+        tvAssistantBadge = findViewById(R.id.tvAssistantBadge);
         tvPowerTarget = findViewById(R.id.tvPowerTarget);
         tvPowerTargetSecondary = findViewById(R.id.tvPowerTargetSecondary);
         tvLastCall = findViewById(R.id.tvLastCall);
         tvLastCallSecondary = findViewById(R.id.tvLastCallSecondary);
         tvVersion = findViewById(R.id.tvVersion);
+        tvEnglishName = findViewById(R.id.tvEnglishName);
 
-        tvScope.setText(getString(R.string.home_scope_format,
-            getString(R.string.home_scope_value)));
+        tvScope.setText(R.string.home_scope_line);
         try {
             String version = getPackageManager()
                 .getPackageInfo(getPackageName(), 0).versionName;
             tvVersion.setText(getString(R.string.home_version_format, version));
         } catch (PackageManager.NameNotFoundException e) {
-            tvVersion.setText(R.string.app_full_name);
+            tvVersion.setText(R.string.app_name);
         }
+        tvEnglishName.setText(R.string.app_english_name);
 
         findViewById(R.id.btnPickAssistant).setOnClickListener(v ->
             startActivity(new Intent(this, AssistantPickerActivity.class)));
@@ -91,21 +97,26 @@ public class HomeActivity extends AppCompatActivity {
             boolean enabled = ConfigStore.isModuleEnabled(this);
             boolean serviceBound = AssistApp.service() != null;
             String selectedPkg = ConfigStore.selectedPackage(this);
-            SystemAssistantState systemDefault = new SystemAssistantReader().read(this);
+            CurrentAssistantState current = AssistantStateStore.current(this);
             String hookStatus = HookStateStore.status(this);
             LogEntity last = LogDb.get(this).dao().last();
 
             // ---- 模块状态卡：是否生效 + Hook 次级状态 + 作用域 ----
             boolean hookOk = Constants.EV_HOOK_INSTALLED.equals(hookStatus);
+            int moduleColor;
             String moduleMain;
             if (!enabled) {
                 moduleMain = getString(R.string.home_module_disabled);
+                moduleColor = ContextCompat.getColor(this, R.color.ouhuan_red);
             } else if (hookOk) {
                 moduleMain = getString(R.string.home_module_active);
+                moduleColor = ContextCompat.getColor(this, R.color.ouhuan_green);
             } else if (hookStatus != null) {
                 moduleMain = getString(R.string.home_module_enabled_wait_reboot);
+                moduleColor = ContextCompat.getColor(this, R.color.ouhuan_text_body);
             } else {
                 moduleMain = getString(R.string.home_module_inactive);
+                moduleColor = ContextCompat.getColor(this, R.color.ouhuan_red);
             }
             StringBuilder hookSecondary = new StringBuilder();
             if (hookStatus == null) {
@@ -119,22 +130,24 @@ public class HomeActivity extends AppCompatActivity {
                 hookSecondary.append(" · ").append(getString(R.string.home_service_unbound));
             }
 
-            // ---- 系统默认助手卡：仅标准 Android 状态（Issue #1 P0-1） ----
-            // 与 ColorOS 电源键原始目标、Hook 状态三者互不冒充。
-            String assistantMain = systemDefault.describe();
-            String assistantSecondary = systemDefault.isAvailable
-                ? describeSource(systemDefault.source)
-                : getString(R.string.home_assistant_source_none);
-
-            // ColorOS 电源键原始目标：独立概念，仅作次级信息展示
-            String powerKeyLine = "";
-            String powerKeyPkg = systemDefault.powerKeyPackage();
-            if (!powerKeyPkg.isEmpty()
-                && !powerKeyPkg.equals(systemDefault.roleHolderPackage)) {
-                String label = describePackageLabel(powerKeyPkg);
-                powerKeyLine = powerKeyPkg.equals(label)
-                    ? getString(R.string.home_power_key_original_raw)
-                    : getString(R.string.home_power_key_original_format, label);
+            // ---- 当前系统默认助手卡：system_server 解析的 CurrentOplusAssistant ----
+            // （小布等 OEM 助手由 system_server 直接识别；ROLE_ASSISTANT / VIS 原始值在诊断页）
+            String assistantMain;
+            String assistantSecondary;
+            boolean badge;
+            if (current != null && !current.displayName.isEmpty()) {
+                assistantMain = current.displayName;
+                assistantSecondary = "";
+                badge = true;
+            } else if (current != null
+                && CurrentAssistantState.SOURCE_NONE.equals(current.source)) {
+                assistantMain = getString(R.string.home_assistant_unrecognized);
+                assistantSecondary = "";
+                badge = false;
+            } else {
+                assistantMain = getString(R.string.home_assistant_pending);
+                assistantSecondary = getString(R.string.home_assistant_pending_hint);
+                badge = false;
             }
 
             // ---- 电源键当前助手卡 ----
@@ -145,10 +158,10 @@ public class HomeActivity extends AppCompatActivity {
                 targetSecondary = getString(R.string.home_target_secondary_disabled);
             } else if (selectedPkg == null || selectedPkg.trim().isEmpty()) {
                 targetMain = getString(R.string.home_target_none_selected);
-                targetSecondary = getString(R.string.home_target_secondary_none);
+                targetSecondary = getString(R.string.home_target_pick_hint);
             } else {
                 targetMain = describePackageLabel(selectedPkg);
-                targetSecondary = "";
+                targetSecondary = getString(R.string.home_target_secondary_taken_over);
             }
 
             // ---- 最近一次调用卡 ----
@@ -167,32 +180,35 @@ public class HomeActivity extends AppCompatActivity {
                 }
             }
 
-            String fModuleMain = moduleMain;
+            String fModuleMain = "● " + moduleMain;
+            int fModuleColor = moduleColor;
             String fHookSecondary = hookSecondary.toString();
+            String fAssistantMain = assistantMain;
             String fAssistantSecondary = assistantSecondary;
-            String fPowerKeyLine = powerKeyLine;
+            boolean fBadge = badge;
             String fTargetMain = targetMain;
             String fTargetSecondary = targetSecondary;
             String fLastMain = lastMain;
             String fLastSecondary = lastSecondary;
             runOnUiThread(() -> {
                 tvModuleStatus.setText(fModuleMain);
+                tvModuleStatus.setTextColor(fModuleColor);
                 tvHookStatusSecondary.setText(fHookSecondary);
-                tvSystemAssistant.setText(assistantMain);
-                tvSystemAssistantSecondary.setText(fAssistantSecondary);
-                if (fPowerKeyLine.isEmpty()) {
-                    tvPowerKeyOriginal.setVisibility(android.view.View.GONE);
+                tvSystemAssistant.setText(fAssistantMain);
+                tvAssistantBadge.setVisibility(fBadge ? View.VISIBLE : View.GONE);
+                if (fAssistantSecondary.isEmpty()) {
+                    tvSystemAssistantSecondary.setVisibility(View.GONE);
                 } else {
-                    tvPowerKeyOriginal.setVisibility(android.view.View.VISIBLE);
-                    tvPowerKeyOriginal.setText(fPowerKeyLine);
+                    tvSystemAssistantSecondary.setVisibility(View.VISIBLE);
+                    tvSystemAssistantSecondary.setText(fAssistantSecondary);
                 }
                 tvPowerTarget.setText(fTargetMain);
                 tvPowerTargetSecondary.setText(fTargetSecondary);
                 tvLastCall.setText(fLastMain);
                 if (fLastSecondary.isEmpty()) {
-                    tvLastCallSecondary.setVisibility(android.view.View.GONE);
+                    tvLastCallSecondary.setVisibility(View.GONE);
                 } else {
-                    tvLastCallSecondary.setVisibility(android.view.View.VISIBLE);
+                    tvLastCallSecondary.setVisibility(View.VISIBLE);
                     tvLastCallSecondary.setText(fLastSecondary);
                 }
             });
@@ -212,16 +228,6 @@ public class HomeActivity extends AppCompatActivity {
             default:
                 return getString(R.string.hook_initializing) + "（" + status + "）";
         }
-    }
-
-    private String describeSource(String source) {
-        if (SystemAssistantState.SOURCE_ROLE.equals(source)) {
-            return getString(R.string.home_assistant_source_role);
-        }
-        if (SystemAssistantState.SOURCE_VIS.equals(source)) {
-            return getString(R.string.home_assistant_source_vis);
-        }
-        return getString(R.string.home_assistant_source_none);
     }
 
     /** 首页仅显示应用名，包名/组件名等开发信息移至诊断页。 */
