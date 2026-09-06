@@ -9,7 +9,7 @@
 如需本地构建（可选）：
 
 - JDK 17（Temurin 推荐）
-- Android Studio 或命令行 Android SDK（compileSdk 35 / build-tools 35.0.0）
+- Android Studio 或命令行 Android SDK（compileSdk 37，随 AGP 自动下载）
 - `./gradlew assembleDebug`
 
 技术栈基线：
@@ -21,7 +21,7 @@
 | AGP | 8.7.3 |
 | libxposed API | `io.github.libxposed:api:102.0.0`（compileOnly） |
 | libxposed service | `io.github.libxposed:service:102.0.0`（App 侧远程配置写入） |
-| minSdk / targetSdk / compileSdk | 29 / 35 / 35 |
+| minSdk / targetSdk / compileSdk | 29 / 35 / 37 |
 | 日志持久化 | Room 2.6.1（仅 App 侧） |
 
 **红线**：API 102 项目禁止混用 legacy Xposed API。出现 `XposedHelpers`、`XSharedPreferences`、`XposedBridge.log` 等 `de.robv.android.xposed` 引用视为阻塞问题。

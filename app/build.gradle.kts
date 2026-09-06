@@ -25,8 +25,8 @@ val hasReleaseSigning = listOf(
 
 android {
     namespace = "com.ouhuan.oplusassistant"
-    compileSdk = 35
-    buildToolsVersion = "35.0.0"
+    // libxposed api/service 102.0.0 的 AAR 元数据要求 compileSdk >= 37
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.ouhuan.oplusassistant"
