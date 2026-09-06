@@ -40,7 +40,7 @@ public final class RuntimeStatusBridge {
     private final Bundle state = new Bundle();
     private final ArrayDeque<Bundle> pendingEvents = new ArrayDeque<>();
     private final CallbackBinder callback = new CallbackBinder();
-    private final int moduleUid;
+    private volatile int moduleUid;
     private final long moduleLoadedAt;
 
     private volatile ContextProvider contextProvider;
@@ -117,6 +117,7 @@ public final class RuntimeStatusBridge {
         if (context == null) {
             return;
         }
+        resolveModuleUid(context);
         synchronized (lock) {
             if (appService != null || bindAttempted) {
                 return;
@@ -161,6 +162,28 @@ public final class RuntimeStatusBridge {
                 RuntimeStatusContract.CHANNEL_WAITING);
         }
         start(provider);
+    }
+
+    /** Xposed ApplicationInfo 不可用时，仅补查 UID；版本仍只来自编译进 dex 的常量。 */
+    private void resolveModuleUid(Context context) {
+        if (moduleUid > 0 || context == null) {
+            return;
+        }
+        try {
+            int resolved = context.getPackageManager()
+                .getApplicationInfo(Constants.MODULE_PACKAGE, 0).uid;
+            if (resolved > 0) {
+                synchronized (lock) {
+                    if (moduleUid <= 0) {
+                        moduleUid = resolved;
+                        state.putLong(RuntimeStatusContract.KEY_MODULE_UID, resolved);
+                    }
+                }
+                log("resolved module uid from system PackageManager: " + resolved);
+            }
+        } catch (Throwable t) {
+            log("resolve module uid from system PackageManager failed", t);
+        }
     }
 
     /** 发送 Hook/调用事件；未连接时排队，通道明确失败时让调用方走广播降级。 */
