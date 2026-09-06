@@ -21,6 +21,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Install Android SDK platform 37 (required by libxposed 102.0.0)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37"
+
       - name: Build debug APK (compile + lint + unit tests)
         run: |
           chmod +x gradlew
