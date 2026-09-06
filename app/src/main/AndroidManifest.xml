@@ -13,6 +13,13 @@
         </intent>
     </queries>
 
+    <!-- Issue #1 P0：system_server(uid 1000) → App 跨 UID 回传通道。
+         exported=true + signature 权限：system 发送方被 AMS 组件检查短路放行，
+         第三方应用因不持有本签名权限而无法伪造/投递。 -->
+    <permission
+        android:name="com.ouhuan.oplusassistant.permission.REPORT"
+        android:protectionLevel="signature" />
+
     <application
         android:name=".app.AssistApp"
         android:allowBackup="true"
@@ -53,7 +60,8 @@
 
         <receiver
             android:name=".data.LogEntryReceiver"
-            android:exported="false">
+            android:exported="true"
+            android:permission="com.ouhuan.oplusassistant.permission.REPORT">
             <intent-filter>
                 <action android:name="com.ouhuan.oplusassistant.action.LOG_EVENT" />
                 <action android:name="com.ouhuan.oplusassistant.action.STATE_REPORT" />

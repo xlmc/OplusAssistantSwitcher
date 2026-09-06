@@ -63,6 +63,8 @@ public class MainModule extends XposedModule {
             reporter.setContextProvider(contextProvider);
             contextProvider.captureEarly();
             contextProvider.installCaptureHook(this, classLoader);
+            // Issue #1 P0 诊断点：确认 system context 是否捕获成功
+            log(Log.INFO, TAG, "system context captured = " + (contextProvider.get() != null));
 
             // systemReady 前广播通道不可用：缓冲事件在此补发，并顺带首次上报系统助手状态
             reporter.installFlushHook(this, classLoader, this::sendAssistantStateReport);

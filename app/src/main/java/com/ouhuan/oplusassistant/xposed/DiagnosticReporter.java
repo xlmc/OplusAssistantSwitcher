@@ -60,6 +60,9 @@ public final class DiagnosticReporter {
         e.hookStrategy = Constants.HOOK_STRATEGY_COLOROS16;
         e.hookStatus = event;
         e.exceptionSummary = summary == null || summary.isEmpty() ? "" : summary;
+        // 同步落 LSPosed 模块日志：即使回传通道异常，也可在管理器日志中确认各里程碑
+        logToXposed("hookEvent " + event
+            + (summary == null || summary.isEmpty() ? "" : " | " + summary));
         report(e);
     }
 
@@ -97,13 +100,16 @@ public final class DiagnosticReporter {
         }
         try {
             Intent intent = new Intent(Constants.ACTION_LOG_EVENT);
-            intent.setPackage(modulePackage);
+            // 显式组件：跨 UID 投递不依赖 intent-filter 解析（Issue #1 P0）
+            intent.setClassName(modulePackage, Constants.RECEIVER_CLASS);
             for (java.util.Map.Entry<String, String> entry : event.toMap().entrySet()) {
                 intent.putExtra(entry.getKey(), entry.getValue());
             }
             context.sendBroadcast(intent);
+            logToXposed("sent LOG_EVENT event=" + event.event);
         } catch (Throwable t) {
             buffer(event);
+            safeLog("send LOG_EVENT failed (" + event.event + "): " + t);
         }
     }
 
@@ -167,7 +173,8 @@ public final class DiagnosticReporter {
         }
         try {
             Intent intent = new Intent(Constants.ACTION_STATE_REPORT);
-            intent.setPackage(modulePackage);
+            // 显式组件：跨 UID 投递不依赖 intent-filter 解析（Issue #1 P0）
+            intent.setClassName(modulePackage, Constants.RECEIVER_CLASS);
             if (fields != null) {
                 for (java.util.Map.Entry<String, String> entry : fields.entrySet()) {
                     intent.putExtra(entry.getKey(), entry.getValue() == null ? "" : entry.getValue());
@@ -178,6 +185,9 @@ public final class DiagnosticReporter {
                     new ArrayList<>(candidateEntries));
             }
             context.sendBroadcast(intent);
+            int count = candidateEntries == null ? 0 : candidateEntries.size();
+            String name = fields == null ? "" : String.valueOf(fields.get(Constants.STATE_CURRENT_NAME));
+            logToXposed("sent STATE_REPORT name=" + name + " candidates=" + count);
         } catch (Throwable t) {
             safeLog("reportState failed: " + t);
         }
@@ -198,6 +208,16 @@ public final class DiagnosticReporter {
         try {
             if (xposed != null) {
                 xposed.log(android.util.Log.WARN, modulePackage, msg);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 直接写 LSPosed 模块日志（回传通道之外的诊断兜底，Issue #1 P0）。 */
+    private void logToXposed(String msg) {
+        try {
+            if (xposed != null) {
+                xposed.log(android.util.Log.INFO, modulePackage, msg);
             }
         } catch (Throwable ignored) {
         }

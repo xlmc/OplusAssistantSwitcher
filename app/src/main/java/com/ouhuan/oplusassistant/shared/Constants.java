@@ -18,6 +18,13 @@ public final class Constants {
     /** Hook 侧 → App 侧状态广播 Action（CurrentOplusAssistant 回传，Issue #1 评论 4）。 */
     public static final String ACTION_STATE_REPORT = "com.ouhuan.oplusassistant.action.STATE_REPORT";
 
+    /** 回传通道发送方权限（signature 级）：system uid 由 AMS 组件检查短路放行，
+     * 第三方应用不持有本签名权限、无法投递（Issue #1 P0 修复）。 */
+    public static final String PERMISSION_REPORT = "com.ouhuan.oplusassistant.permission.REPORT";
+
+    /** 回传广播的显式目标组件（跨 UID 场景下避免 intent-filter 解析变数）。 */
+    public static final String RECEIVER_CLASS = "com.ouhuan.oplusassistant.data.LogEntryReceiver";
+
     /** 状态广播字段：当前实际助手（system_server 解析）。 */
     public static final String STATE_CURRENT_NAME = "state_current_name";
     public static final String STATE_CURRENT_PACKAGE = "state_current_package";
