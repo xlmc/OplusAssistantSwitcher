@@ -114,7 +114,7 @@ public final class RuntimeStatusBridge {
                 RuntimeStatusContract.SERVICE_CLASS));
             boolean bound = context.bindServiceAsUser(intent, connection,
                 Context.BIND_AUTO_CREATE | Context.BIND_NOT_FOREGROUND,
-                UserHandle.SYSTEM);
+                UserHandle.of(UserHandle.USER_SYSTEM));
             if (!bound) {
                 markChannelFailed("bindServiceAsUser returned false");
             }
