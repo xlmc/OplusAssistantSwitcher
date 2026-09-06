@@ -105,7 +105,14 @@ CI 与 Release 均运行 `.github/scripts/verify_xposed_meta.sh` 校验以上内
 5. 门禁：`apksigner verify`、aapt2 校验 `versionName/versionCode` 与 Tag 一致、Xposed 元数据脚本
 6. 生成 `.sha256`，用 `gh release create` 发布 APK + 校验文件
 
-### 4.3 首次发布前的签名配置
+### 4.3 版本一致性与重启标记
+
+- `MainModule` 在 `system_server` 启动时从模块自身 `ApplicationInfo` 读取实际加载的 `versionName/versionCode`，并随既有 `STATE_REPORT` 上报。
+- App 侧将该版本持久化，并与当前 APK 的 `versionName/versionCode` 比较：首页和诊断页显示两边版本；一致时显示「模块版本已同步」，不一致时显示「需要重载 system_server / 重启设备后生效」。未收到上报或版本不完整时不误报一致。
+- Release 与 CHANGELOG 必须明确写 `是否需要重启设备：是/否`。Release workflow 会比较当前 Tag 与上一正式 Tag 的文件变更：涉及 `xposed/`、`shared/`、Xposed 元数据、`AndroidManifest.xml` 或状态接收协议时标记「是」，否则标记「否」。
+- 开发期仅 App/UI 改动：安装新版 APK → 重启 App → 直接测试；涉及 Xposed/system_server 或通信协议：安装新版 APK → 根据版本卡提示重载/重启 → 验证两边版本一致。不要把整机重启作为所有版本的默认动作。
+
+### 4.4 首次发布前的签名配置
 
 生成一份专用于本项目的 keystore（本地执行，**不要提交仓库**）：
 

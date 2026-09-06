@@ -34,6 +34,10 @@ public final class Constants {
     public static final String STATE_ROLE_HOLDER = "state_role_holder";
     public static final String STATE_VOICE_INTERACTION_SERVICE = "state_voice_interaction_service";
     public static final String STATE_TIMESTAMP = "state_timestamp";
+    /** system_server 实际加载的模块版本（用于区分 App 已更新与 Hook 已重载）。 */
+    public static final String STATE_MODULE_VERSION_NAME = "state_module_version_name";
+    public static final String STATE_MODULE_VERSION_CODE = "state_module_version_code";
+    public static final String STATE_MODULE_LOADED_AT = "state_module_loaded_at";
     /** 状态广播附加：system_server 侧扫描的候选列表（StringArrayList，序列化条目）。 */
     public static final String STATE_CANDIDATES = "state_candidates";
 

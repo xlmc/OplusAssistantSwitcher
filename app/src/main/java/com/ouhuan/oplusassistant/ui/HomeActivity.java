@@ -1,6 +1,7 @@
 package com.ouhuan.oplusassistant.ui;
 
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.view.View;
@@ -20,6 +21,7 @@ import com.ouhuan.oplusassistant.data.LogEntity;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
 import com.ouhuan.oplusassistant.shared.LaunchResult;
+import com.ouhuan.oplusassistant.shared.ModuleVersionState;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -37,6 +39,7 @@ public class HomeActivity extends AppCompatActivity {
     private TextView tvModuleStatus;
     private TextView tvHookStatusSecondary;
     private TextView tvScope;
+    private TextView tvModuleVersion;
     private TextView tvSystemAssistant;
     private TextView tvSystemAssistantSecondary;
     private TextView tvAssistantBadge;
@@ -56,6 +59,7 @@ public class HomeActivity extends AppCompatActivity {
         tvModuleStatus = findViewById(R.id.tvModuleStatus);
         tvHookStatusSecondary = findViewById(R.id.tvHookStatusSecondary);
         tvScope = findViewById(R.id.tvScope);
+        tvModuleVersion = findViewById(R.id.tvModuleVersion);
         tvSystemAssistant = findViewById(R.id.tvSystemAssistant);
         tvSystemAssistantSecondary = findViewById(R.id.tvSystemAssistantSecondary);
         tvAssistantBadge = findViewById(R.id.tvAssistantBadge);
@@ -98,16 +102,25 @@ public class HomeActivity extends AppCompatActivity {
             boolean serviceBound = AssistApp.service() != null;
             String selectedPkg = ConfigStore.selectedPackage(this);
             CurrentAssistantState current = AssistantStateStore.current(this);
+            AppVersion appVersion = readAppVersion();
+            ModuleVersionState serverModule = AssistantStateStore.moduleVersion(this);
+            ModuleVersionState.Comparison versionComparison = serverModule == null
+                ? ModuleVersionState.Comparison.UNKNOWN
+                : serverModule.compareTo(appVersion.name, appVersion.code);
             String hookStatus = HookStateStore.status(this);
             LogEntity last = LogDb.get(this).dao().last();
 
             // ---- 模块状态卡：是否生效 + Hook 次级状态 + 作用域 ----
-            boolean hookOk = Constants.EV_HOOK_INSTALLED.equals(hookStatus);
+            boolean hookOk = Constants.EV_HOOK_INSTALLED.equals(hookStatus)
+                && versionComparison == ModuleVersionState.Comparison.MATCH;
             int moduleColor;
             String moduleMain;
             if (!enabled) {
                 moduleMain = getString(R.string.home_module_disabled);
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_red);
+            } else if (versionComparison != ModuleVersionState.Comparison.MATCH) {
+                moduleMain = getString(R.string.home_module_enabled_wait_reboot);
+                moduleColor = ContextCompat.getColor(this, R.color.ouhuan_text_body);
             } else if (hookOk) {
                 moduleMain = getString(R.string.home_module_active);
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_green);
@@ -119,7 +132,11 @@ public class HomeActivity extends AppCompatActivity {
                 moduleColor = ContextCompat.getColor(this, R.color.ouhuan_red);
             }
             StringBuilder hookSecondary = new StringBuilder();
-            if (hookStatus == null) {
+            if (versionComparison == ModuleVersionState.Comparison.MISMATCH) {
+                hookSecondary.append(getString(R.string.home_hook_old_version));
+            } else if (versionComparison == ModuleVersionState.Comparison.UNKNOWN) {
+                hookSecondary.append(getString(R.string.home_hook_version_unknown));
+            } else if (hookStatus == null) {
                 hookSecondary.append(getString(R.string.home_hook_status_format,
                     getString(R.string.home_hook_not_active)));
             } else {
@@ -183,6 +200,8 @@ public class HomeActivity extends AppCompatActivity {
             String fModuleMain = "● " + moduleMain;
             int fModuleColor = moduleColor;
             String fHookSecondary = hookSecondary.toString();
+            String fModuleVersion = describeModuleVersion(appVersion, serverModule,
+                versionComparison);
             String fAssistantMain = assistantMain;
             String fAssistantSecondary = assistantSecondary;
             boolean fBadge = badge;
@@ -194,6 +213,7 @@ public class HomeActivity extends AppCompatActivity {
                 tvModuleStatus.setText(fModuleMain);
                 tvModuleStatus.setTextColor(fModuleColor);
                 tvHookStatusSecondary.setText(fHookSecondary);
+                tvModuleVersion.setText(fModuleVersion);
                 tvSystemAssistant.setText(fAssistantMain);
                 tvAssistantBadge.setVisibility(fBadge ? View.VISIBLE : View.GONE);
                 if (fAssistantSecondary.isEmpty()) {
@@ -213,6 +233,50 @@ public class HomeActivity extends AppCompatActivity {
                 }
             });
         });
+    }
+
+    private AppVersion readAppVersion() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            String name = info.versionName == null ? "" : info.versionName;
+            return new AppVersion(name, info.getLongVersionCode());
+        } catch (Throwable t) {
+            return new AppVersion("", ModuleVersionState.UNKNOWN_VERSION_CODE);
+        }
+    }
+
+    private String describeModuleVersion(AppVersion appVersion,
+                                         ModuleVersionState serverModule,
+                                         ModuleVersionState.Comparison comparison) {
+        String appName = appVersion.name.isEmpty() ? "-" : appVersion.name;
+        String appLine = getString(R.string.home_module_version_app, appName,
+            String.valueOf(appVersion.code));
+        String serverLine;
+        if (serverModule == null) {
+            serverLine = getString(R.string.home_module_version_server_unknown);
+        } else {
+            String serverName = serverModule.versionName.isEmpty()
+                ? "-" : serverModule.versionName;
+            String serverCode = serverModule.versionCode < 0
+                ? "-" : String.valueOf(serverModule.versionCode);
+            serverLine = getString(R.string.home_module_version_server, serverName, serverCode);
+        }
+        int statusRes = comparison == ModuleVersionState.Comparison.MATCH
+            ? R.string.home_module_version_synced
+            : comparison == ModuleVersionState.Comparison.MISMATCH
+                ? R.string.home_module_version_reload
+                : R.string.home_module_version_pending;
+        return appLine + "\n" + serverLine + "\n" + getString(statusRes);
+    }
+
+    private static final class AppVersion {
+        final String name;
+        final long code;
+
+        AppVersion(String name, long code) {
+            this.name = name;
+            this.code = code;
+        }
     }
 
     private String describeHookStatus(String status) {

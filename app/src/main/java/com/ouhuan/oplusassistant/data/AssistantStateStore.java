@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
+import com.ouhuan.oplusassistant.shared.ModuleVersionState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +28,9 @@ public final class AssistantStateStore {
     private static final String KEY_VIS = "voice_interaction_service";
     private static final String KEY_TIMESTAMP = "timestamp";
     private static final String KEY_CANDIDATES = "candidates";
+    private static final String KEY_MODULE_VERSION_NAME = "module_version_name";
+    private static final String KEY_MODULE_VERSION_CODE = "module_version_code";
+    private static final String KEY_MODULE_LOADED_AT = "module_loaded_at";
 
     /** 候选条目字段分隔符。 */
     public static final String SEP_FIELD = "\u0001";
@@ -52,6 +56,19 @@ public final class AssistantStateStore {
         } catch (NumberFormatException ignored) {
         }
         editor.putLong(KEY_TIMESTAMP, ts == 0 ? System.currentTimeMillis() : ts);
+        if (data.containsKey(Constants.STATE_MODULE_VERSION_NAME)) {
+            editor.putString(KEY_MODULE_VERSION_NAME,
+                safe(data.get(Constants.STATE_MODULE_VERSION_NAME)));
+        }
+        if (data.containsKey(Constants.STATE_MODULE_VERSION_CODE)) {
+            editor.putLong(KEY_MODULE_VERSION_CODE,
+                parseLong(data.get(Constants.STATE_MODULE_VERSION_CODE),
+                    ModuleVersionState.UNKNOWN_VERSION_CODE));
+        }
+        if (data.containsKey(Constants.STATE_MODULE_LOADED_AT)) {
+            editor.putLong(KEY_MODULE_LOADED_AT,
+                parseLong(data.get(Constants.STATE_MODULE_LOADED_AT), 0L));
+        }
         if (candidateEntries != null) {
             StringBuilder sb = new StringBuilder();
             for (String entry : candidateEntries) {
@@ -86,6 +103,19 @@ public final class AssistantStateStore {
             ts);
     }
 
+    /** 最近一次 system_server 上报的实际模块版本；从未上报返回 null。 */
+    public static ModuleVersionState moduleVersion(Context context) {
+        SharedPreferences p = prefs(context);
+        long loadedAt = p.getLong(KEY_MODULE_LOADED_AT, 0L);
+        if (loadedAt <= 0L) {
+            return null;
+        }
+        return new ModuleVersionState(
+            p.getString(KEY_MODULE_VERSION_NAME, ""),
+            p.getLong(KEY_MODULE_VERSION_CODE, ModuleVersionState.UNKNOWN_VERSION_CODE),
+            loadedAt);
+    }
+
     /** system_server 侧扫描到的候选列表（可能与本地扫描合并去重）。 */
     public static List<AssistantCandidate> candidates(Context context) {
         List<AssistantCandidate> result = new ArrayList<>();
@@ -116,5 +146,13 @@ public final class AssistantStateStore {
 
     private static String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private static long parseLong(String value, long fallback) {
+        try {
+            return Long.parseLong(safe(value));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 }

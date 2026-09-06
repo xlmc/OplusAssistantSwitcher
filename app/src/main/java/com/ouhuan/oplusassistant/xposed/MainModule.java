@@ -1,11 +1,13 @@
 package com.ouhuan.oplusassistant.xposed;
 
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.util.Log;
 
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
+import com.ouhuan.oplusassistant.shared.ModuleVersionState;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -30,6 +32,9 @@ public class MainModule extends XposedModule {
     private DiagnosticReporter reporter;
     private ContextProvider contextProvider;
     private AssistantResolver resolver;
+    private String loadedModuleVersionName = "";
+    private long loadedModuleVersionCode = ModuleVersionState.UNKNOWN_VERSION_CODE;
+    private long moduleLoadedAt;
 
     @Override
     public void onModuleLoaded(XposedModuleInterface.ModuleLoadedParam param) {
@@ -41,10 +46,12 @@ public class MainModule extends XposedModule {
                 detach();
                 return;
             }
+            captureLoadedModuleVersion();
             reporter.hookEvent(Constants.EV_MODULE_LOADED,
                 "process=" + param.getProcessName()
                     + ", framework=" + getFrameworkName() + " " + getFrameworkVersion()
-                    + ", api=" + getApiVersion());
+                    + ", api=" + getApiVersion()
+                    + ", moduleVersion=" + moduleVersionSummary());
         } catch (Throwable t) {
             safeLog("onModuleLoaded failed", t);
         }
@@ -54,6 +61,9 @@ public class MainModule extends XposedModule {
     public void onSystemServerStarting(XposedModuleInterface.SystemServerStartingParam param) {
         try {
             ClassLoader classLoader = param.getClassLoader();
+            if (moduleLoadedAt == 0L) {
+                captureLoadedModuleVersion();
+            }
             if (reporter == null) {
                 reporter = new DiagnosticReporter(this);
             }
@@ -98,6 +108,9 @@ public class MainModule extends XposedModule {
             fields.put(Constants.STATE_ROLE_HOLDER, current.roleHolderPackage);
             fields.put(Constants.STATE_VOICE_INTERACTION_SERVICE, current.voiceInteractionService);
             fields.put(Constants.STATE_TIMESTAMP, String.valueOf(current.timestamp));
+            fields.put(Constants.STATE_MODULE_VERSION_NAME, loadedModuleVersionName);
+            fields.put(Constants.STATE_MODULE_VERSION_CODE, String.valueOf(loadedModuleVersionCode));
+            fields.put(Constants.STATE_MODULE_LOADED_AT, String.valueOf(moduleLoadedAt));
 
             List<String> entries = new ArrayList<>();
             for (AssistantCandidate candidate : candidates) {
@@ -113,6 +126,28 @@ public class MainModule extends XposedModule {
         } catch (Throwable t) {
             safeLog("sendAssistantStateReport failed", t);
         }
+    }
+
+    /** 从模块自身 ApplicationInfo 读取实际加载到 system_server 的版本。 */
+    private void captureLoadedModuleVersion() {
+        moduleLoadedAt = System.currentTimeMillis();
+        try {
+            ApplicationInfo info = getModuleApplicationInfo();
+            if (info == null) {
+                return;
+            }
+            loadedModuleVersionName = info.versionName == null ? "" : info.versionName.trim();
+            loadedModuleVersionCode = info.getLongVersionCode();
+        } catch (Throwable t) {
+            loadedModuleVersionName = "";
+            loadedModuleVersionCode = ModuleVersionState.UNKNOWN_VERSION_CODE;
+            safeLog("read loaded module version failed", t);
+        }
+    }
+
+    private String moduleVersionSummary() {
+        String name = loadedModuleVersionName.isEmpty() ? "unknown" : loadedModuleVersionName;
+        return name + "/" + loadedModuleVersionCode;
     }
 
     /** 与 AssistantStateStore 的序列化分隔符保持一致。 */

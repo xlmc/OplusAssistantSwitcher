@@ -1,6 +1,7 @@
 package com.ouhuan.oplusassistant.ui;
 
 import android.os.Bundle;
+import android.content.pm.PackageInfo;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -15,6 +16,7 @@ import com.ouhuan.oplusassistant.data.LogDb;
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.CurrentAssistantState;
+import com.ouhuan.oplusassistant.shared.ModuleVersionState;
 import com.ouhuan.oplusassistant.shared.SystemAssistantState;
 import com.ouhuan.oplusassistant.system.AssistantScanner;
 import com.ouhuan.oplusassistant.system.DeviceProps;
@@ -39,6 +41,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
     private TextView tvHookTech;
     private TextView tvAssistantDetail;
     private TextView tvSystemServer;
+    private TextView tvModuleVersion;
     private TextView tvCandidates;
     private TextView tvSelection;
     private TextView tvStats;
@@ -55,6 +58,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
         tvHookTech = findViewById(R.id.tvHookTech);
         tvAssistantDetail = findViewById(R.id.tvAssistantDetail);
         tvSystemServer = findViewById(R.id.tvSystemServer);
+        tvModuleVersion = findViewById(R.id.tvModuleVersion);
         tvCandidates = findViewById(R.id.tvCandidates);
         tvSelection = findViewById(R.id.tvSelection);
         tvStats = findViewById(R.id.tvStats);
@@ -131,6 +135,14 @@ public class DiagnosticsActivity extends AppCompatActivity {
                         : "-");
             }
 
+            AppVersion appVersion = readAppVersion();
+            ModuleVersionState serverModule = AssistantStateStore.moduleVersion(this);
+            ModuleVersionState.Comparison versionComparison = serverModule == null
+                ? ModuleVersionState.Comparison.UNKNOWN
+                : serverModule.compareTo(appVersion.name, appVersion.code);
+            String moduleVersion = describeModuleVersion(appVersion, serverModule,
+                versionComparison);
+
             // 候选清单与每个候选的资格来源（本地扫描 ∪ system_server 上报，仅诊断页展示）
             StringBuilder candidates = new StringBuilder();
             List<AssistantCandidate> scanned =
@@ -186,6 +198,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String finalHookTech = hookTech;
             String finalAssistantDetail = assistantDetail;
             String finalSystemServer = systemServer;
+            String finalModuleVersion = moduleVersion;
             String finalCandidates = candidates.toString();
             String finalSelection = selection;
             String finalStats = stats;
@@ -196,6 +209,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 tvHookTech.setText(finalHookTech);
                 tvAssistantDetail.setText(finalAssistantDetail);
                 tvSystemServer.setText(finalSystemServer);
+                tvModuleVersion.setText(finalModuleVersion);
                 tvCandidates.setText(finalCandidates);
                 tvSelection.setText(finalSelection);
                 tvStats.setText(finalStats);
@@ -205,6 +219,50 @@ public class DiagnosticsActivity extends AppCompatActivity {
 
     private static String orDash(String value) {
         return value == null || value.isEmpty() ? "-" : value;
+    }
+
+    private AppVersion readAppVersion() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            String name = info.versionName == null ? "" : info.versionName;
+            return new AppVersion(name, info.getLongVersionCode());
+        } catch (Throwable t) {
+            return new AppVersion("", ModuleVersionState.UNKNOWN_VERSION_CODE);
+        }
+    }
+
+    private String describeModuleVersion(AppVersion appVersion,
+                                         ModuleVersionState serverModule,
+                                         ModuleVersionState.Comparison comparison) {
+        String appName = appVersion.name.isEmpty() ? "-" : appVersion.name;
+        String appLine = getString(R.string.home_module_version_app, appName,
+            String.valueOf(appVersion.code));
+        String serverLine;
+        if (serverModule == null) {
+            serverLine = getString(R.string.home_module_version_server_unknown);
+        } else {
+            String serverName = serverModule.versionName.isEmpty()
+                ? "-" : serverModule.versionName;
+            String serverCode = serverModule.versionCode < 0
+                ? "-" : String.valueOf(serverModule.versionCode);
+            serverLine = getString(R.string.home_module_version_server, serverName, serverCode);
+        }
+        int statusRes = comparison == ModuleVersionState.Comparison.MATCH
+            ? R.string.home_module_version_synced
+            : comparison == ModuleVersionState.Comparison.MISMATCH
+                ? R.string.home_module_version_reload
+                : R.string.home_module_version_pending;
+        return appLine + "\n" + serverLine + "\n" + getString(statusRes);
+    }
+
+    private static final class AppVersion {
+        final String name;
+        final long code;
+
+        AppVersion(String name, long code) {
+            this.name = name;
+            this.code = code;
+        }
     }
 
     private String describeService() {

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+**是否需要重启设备：是**（本轮包含 Xposed/system_server 代码与 system_server↔App 状态协议变更；安装后需重载或重启 system_server）。
+
 ### Added（V1，对应开发书 v1.0）
 
 - libxposed API 102 最小工程：LSPosed 可识别，作用域固定 `system`（staticScope）
@@ -13,5 +15,6 @@
 - AssistantLauncher：标准 `ACTION_ASSIST` / `ACTION_VOICE_COMMAND` 入口，返回结构化 LaunchResult，不做回退与轮询
 - RuntimeConfig：Remote Preferences 配置同步 + system_server 内缓存；读取失败视为未启用
 - DiagnosticReporter：轻量日志事件异步广播上报，App 侧 Room 持久化；日志页支持查看、按失败筛选、复制单条、复制完整诊断、清空
+- 版本一致性状态：首页与诊断页同时显示 App 版本、system_server 已加载模块版本；不一致时明确提示需要重载，避免把旧 Hook 状态误报为已生效
 - App 五页面：首页 / 助手选择 / 日志 / 诊断信息 / 设置
 - GitHub Actions：ci.yml（编译 + Lint + 单元测试 + Xposed 元数据门禁 + debug Artifact）、release.yml（v* Tag 触发、签名、SHA-256、版本一致性门禁、自动创建 Release）

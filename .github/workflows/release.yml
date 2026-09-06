@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -39,6 +41,42 @@ jobs:
           echo "version=$VERSION" >>"$GITHUB_OUTPUT"
           echo "code=$CODE" >>"$GITHUB_OUTPUT"
           echo "tag=$TAG" >>"$GITHUB_OUTPUT"
+
+      - name: Determine device restart requirement
+        id: restart
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          PREVIOUS_TAG="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname \
+            | grep -Fxv "$TAG" | head -n 1 || true)"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            CHANGED="$(git diff --name-only "$PREVIOUS_TAG" "$TAG")"
+          else
+            CHANGED="$(git ls-tree -r --name-only "$TAG")"
+          fi
+
+          RESTART_REQUIRED=no
+          while IFS= read -r FILE; do
+            case "$FILE" in
+              app/src/main/java/com/ouhuan/oplusassistant/xposed/*|\
+              app/src/main/java/com/ouhuan/oplusassistant/shared/*|\
+              app/src/main/java/com/ouhuan/oplusassistant/data/LogEntryReceiver.java|\
+              app/src/main/resources/META-INF/xposed/*|\
+              app/src/main/AndroidManifest.xml)
+                RESTART_REQUIRED=yes
+                break
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "$RESTART_REQUIRED" = yes ]; then
+            RESTART_TEXT=是
+          else
+            RESTART_TEXT=否
+          fi
+          echo "required=$RESTART_REQUIRED" >>"$GITHUB_OUTPUT"
+          echo "required_text=$RESTART_TEXT" >>"$GITHUB_OUTPUT"
+          echo "是否需要重启设备：$RESTART_TEXT"
 
       - name: Check signing secrets
         env:
@@ -128,8 +166,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.ver.outputs.tag }}
+          RESTART_TEXT: ${{ steps.restart.outputs.required_text }}
         run: |
           gh release create "$TAG" dist/* \
             --verify-tag \
             --title "欧唤 Oplus Assistant Switcher $TAG" \
+            --notes "是否需要重启设备：${RESTART_TEXT}" \
             --generate-notes
