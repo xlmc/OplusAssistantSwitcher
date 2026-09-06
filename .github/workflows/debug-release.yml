@@ -1,0 +1,79 @@
+name: Debug Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: debug-release
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish rolling debug release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK platform 37 (required by libxposed 102.0.0)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37.0"
+
+      - name: Build and verify debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug lintDebug testDebugUnitTest --stacktrace
+          VERSION="$(./gradlew -q :app:printVersionName --console=plain | tail -n 1)"
+          mkdir -p dist
+          mv app/build/outputs/apk/debug/app-debug.apk \
+            "dist/OplusAssistantSwitcher-v${VERSION}-debug.apk"
+          bash .github/scripts/verify_xposed_meta.sh \
+            "dist/OplusAssistantSwitcher-v${VERSION}-debug.apk"
+          sha256sum "dist/OplusAssistantSwitcher-v${VERSION}-debug.apk" \
+            > "dist/OplusAssistantSwitcher-v${VERSION}-debug.apk.sha256"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Create or update rolling prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: latest-debug
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          NOTES="$(cat <<EOF
+          自动构建的未签名 Debug 测试版。
+
+          提交：${COMMIT_SHA}
+          是否需要重启设备：是（本项目当前版本包含 Xposed/system_server 代码变更）。
+
+          该包用于安装前的 CI 验收与真机测试，不是正式签名 Release；正式发布请使用 vX.Y.Z Tag。
+          EOF
+          )"
+          if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --title "欧唤 Oplus Assistant Switcher（持续集成测试版）" \
+              --notes "$NOTES" --prerelease
+          else
+            gh release create "$TAG" --repo "$REPOSITORY" \
+              --target "$COMMIT_SHA" \
+              --title "欧唤 Oplus Assistant Switcher（持续集成测试版）" \
+              --notes "$NOTES" --prerelease
+          fi
+          gh release upload "$TAG" --repo "$REPOSITORY" dist/* --clobber

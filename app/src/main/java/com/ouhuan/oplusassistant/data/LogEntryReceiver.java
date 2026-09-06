@@ -53,6 +53,9 @@ public class LogEntryReceiver extends BroadcastReceiver {
                 intent.getStringArrayListExtra(Constants.STATE_CANDIDATES);
             AppExecutors.io().execute(() -> {
                 try {
+                    // Binder 是主通道；广播仅为降级通道，但降级时也要更新同一份
+                    // 运行态快照，避免诊断页只看到 Room 日志而看不到 Hook 阶段。
+                    RuntimeStatusStore.apply(context, extras);
                     AssistantStateStore.apply(context, data, candidates);
                 } catch (Throwable t) {
                     RuntimeDebugStore.append(context, "broadcast",
@@ -72,6 +75,7 @@ public class LogEntryReceiver extends BroadcastReceiver {
         AppExecutors.io().execute(() -> {
                 try {
                     LogEntity entity = LogEntity.fromMap(data);
+                    RuntimeStatusStore.applyEvent(context, extras);
                     LogDb.get(context).dao().insert(entity);
                     RuntimeDebugStore.append(context, "broadcast", entity.event,
                         entity.hookStatus, entity.exceptionSummary, entity.exceptionType);

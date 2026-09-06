@@ -117,26 +117,31 @@ public final class AssistantResolver {
 
         // 1) 电源键原始目标（最高可信）
         String assistComponent = standard.assistComponent;
-        if (!assistComponent.isEmpty()) {
+        if (!assistComponent.isEmpty() && isKnownComponent(pm, assistComponent)) {
+            // Settings.Secure 中的原始组件是最高可信来源。即使该组件没有
+            // label，也不能因为 UI 元数据缺失而退到任意一个 OEM 服务。
+            String rawPackage = packageOf(assistComponent);
             String label = loadComponentLabel(pm, assistComponent);
-            if (!label.isEmpty()) {
-                name = label;
-                pkg = packageOf(assistComponent);
-                component = assistComponent;
-                source = CurrentAssistantState.SOURCE_POWER_KEY;
+            if (label.isEmpty()) {
+                label = appLabel(pm, rawPackage);
             }
+            name = label.isEmpty() ? "系统助手" : label;
+            pkg = rawPackage;
+            component = assistComponent;
+            source = CurrentAssistantState.SOURCE_POWER_KEY;
         }
 
         // 2) OEM 内置语音服务（小布等）
         if (CurrentAssistantState.SOURCE_NONE.equals(source)) {
-            ResolveInfo service = findOemVoiceService(pm);
+            ResolveInfo service = findOemVoiceService(pm, standard.voiceInteractionService);
             if (service != null && service.serviceInfo != null) {
                 ServiceInfo info = service.serviceInfo;
                 CharSequence label = info.loadLabel(pm);
                 if (label == null || label.length() == 0) {
                     label = appLabel(pm, info.packageName);
                 }
-                name = label == null ? "" : String.valueOf(label);
+                name = label == null || label.length() == 0
+                    ? "系统助手" : String.valueOf(label);
                 pkg = info.packageName;
                 component = new ComponentName(info.packageName, info.name).flattenToString();
                 source = CurrentAssistantState.SOURCE_OEM_VOICE_SERVICE;
@@ -145,7 +150,8 @@ public final class AssistantResolver {
 
         // 3) 标准 ROLE_ASSISTANT 持有者
         if (CurrentAssistantState.SOURCE_NONE.equals(source) && standard.isAvailable) {
-            name = standard.label;
+            name = standard.label == null || standard.label.isEmpty()
+                ? "系统助手" : standard.label;
             pkg = standard.roleHolderPackage != null && !standard.roleHolderPackage.isEmpty()
                 ? standard.roleHolderPackage
                 : packageOf(standard.voiceInteractionService);
@@ -159,8 +165,14 @@ public final class AssistantResolver {
     }
 
     /** 在完整包可见性下查找 OEM 内置语音服务（com.coloros / heytap / oplus / oppo / oneplus 前缀）。 */
-    private ResolveInfo findOemVoiceService(PackageManager pm) {
+    private ResolveInfo findOemVoiceService(PackageManager pm, String configuredVoiceService) {
         try {
+            // 如果系统已经给出了具体 VIS 组件，优先验证它；不能在多个 OEM
+            // 语音服务之间按 query 顺序任选一个冒充当前助手。
+            ResolveInfo configured = resolveOemVoiceService(pm, configuredVoiceService);
+            if (configured != null) {
+                return configured;
+            }
             List<ResolveInfo> services = pm.queryIntentServices(
                 new Intent(Constants.VIS_SERVICE_INTERFACE), PackageManager.GET_META_DATA);
             for (ResolveInfo info : services) {
@@ -187,7 +199,34 @@ public final class AssistantResolver {
         }
     }
 
+    /** 从当前系统设置验证具体 OEM VoiceInteractionService。 */
+    private ResolveInfo resolveOemVoiceService(PackageManager pm, String flattened) {
+        if (flattened == null || flattened.isEmpty()) {
+            return null;
+        }
+        ComponentName component = ComponentName.unflattenFromString(flattened);
+        if (component == null || !isOemPackage(component.getPackageName())) {
+            return null;
+        }
+        try {
+            ServiceInfo service = pm.getServiceInfo(component, 0);
+            if (!Constants.PERM_BIND_VOICE_INTERACTION.equals(service.permission)
+                || !isAppEnabled(pm, service.packageName)) {
+                return null;
+            }
+            ResolveInfo result = new ResolveInfo();
+            result.serviceInfo = service;
+            return result;
+        } catch (Throwable t) {
+            reportFailure("configured_oem_voice_service_query", t);
+            return null;
+        }
+    }
+
     private boolean isOemPackage(String pkg) {
+        if (pkg == null) {
+            return false;
+        }
         for (String prefix : Constants.OEM_ASSISTANT_PACKAGE_PREFIXES) {
             if (pkg.startsWith(prefix)) {
                 return true;
@@ -303,12 +342,35 @@ public final class AssistantResolver {
         if (currentPkg == null || currentPkg.isEmpty() || !currentPkg.equals(pkg)) {
             return false;
         }
+        if (!isOemPackage(pkg)) {
+            return false;
+        }
         try {
             ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
             return (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
                 && (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
         } catch (Throwable t) {
             reportFailure("vendor_original_target_query", t);
+            return false;
+        }
+    }
+
+    private boolean isKnownComponent(PackageManager pm, String flattened) {
+        ComponentName component = ComponentName.unflattenFromString(flattened);
+        if (component == null) {
+            return false;
+        }
+        try {
+            pm.getActivityInfo(component, 0);
+            return true;
+        } catch (Throwable ignored) {
+            // Settings.Secure assistant may point to a service rather than an Activity.
+        }
+        try {
+            pm.getServiceInfo(component, 0);
+            return true;
+        } catch (Throwable t) {
+            reportFailure("current_assistant_component_query", t);
             return false;
         }
     }

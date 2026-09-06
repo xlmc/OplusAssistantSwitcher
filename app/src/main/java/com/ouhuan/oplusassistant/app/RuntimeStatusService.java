@@ -33,7 +33,10 @@ import java.util.Map;
 public final class RuntimeStatusService extends Service {
 
     private static final String TAG = "OplusAssistant";
+    private static final Object CALLBACK_LOCK = new Object();
     private static volatile IBinder systemServerCallback;
+    private static volatile IBinder.DeathRecipient callbackDeathRecipient;
+    private static volatile android.content.Context serviceContext;
     private static volatile String lastPingFailure = "";
 
     private final IBinder binder = new StatusBinder();
@@ -41,13 +44,14 @@ public final class RuntimeStatusService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        serviceContext = getApplicationContext();
         Log.i(TAG, "RuntimeStatusService created");
     }
 
     @Override
     public void onDestroy() {
-        systemServerCallback = null;
-        lastPingFailure = "service destroyed";
+        clearCallback(null, "service destroyed");
+        serviceContext = null;
         Log.i(TAG, "RuntimeStatusService destroyed");
         super.onDestroy();
     }
@@ -183,7 +187,11 @@ public final class RuntimeStatusService extends Service {
             enforceSystemCaller();
             switch (code) {
                 case RuntimeStatusContract.TRANSACTION_REGISTER_CALLBACK:
-                    systemServerCallback = data.readStrongBinder();
+                    IBinder callback = data.readStrongBinder();
+                    if (callback == null) {
+                        throw new RemoteException("system_server callback is null");
+                    }
+                    registerSystemServerCallback(callback);
                     RuntimeStatusStore.markPeer(RuntimeStatusService.this, Binder.getCallingUid(),
                         "system_server");
                     RuntimeDebugStore.append(RuntimeStatusService.this, "app",
@@ -212,6 +220,33 @@ public final class RuntimeStatusService extends Service {
             }
         }
 
+        private void registerSystemServerCallback(IBinder callback) throws RemoteException {
+            IBinder previous;
+            IBinder.DeathRecipient previousRecipient;
+            IBinder.DeathRecipient newRecipient = () ->
+                clearCallback(callback, "system_server callback binder died");
+            synchronized (CALLBACK_LOCK) {
+                previous = systemServerCallback;
+                previousRecipient = callbackDeathRecipient;
+                systemServerCallback = callback;
+                callbackDeathRecipient = newRecipient;
+                try {
+                    callback.linkToDeath(newRecipient, 0);
+                } catch (RemoteException e) {
+                    systemServerCallback = previous;
+                    callbackDeathRecipient = previousRecipient;
+                    throw e;
+                }
+            }
+            if (previous != null && previousRecipient != null) {
+                try {
+                    previous.unlinkToDeath(previousRecipient, 0);
+                } catch (Throwable ignored) {
+                    Log.w(TAG, "Unable to unlink previous system_server callback", ignored);
+                }
+            }
+        }
+
         private void enforceSystemCaller() {
             if (Binder.getCallingUid() != Process.SYSTEM_UID) {
                 RuntimeDebugStore.append(RuntimeStatusService.this, "app",
@@ -221,5 +256,34 @@ public final class RuntimeStatusService extends Service {
                 throw new SecurityException("RuntimeStatusService accepts system uid only");
             }
         }
+    }
+
+    private static void clearCallback(IBinder expected, String reason) {
+        IBinder previous = null;
+        IBinder.DeathRecipient previousRecipient = null;
+        synchronized (CALLBACK_LOCK) {
+            if (expected != null && systemServerCallback != expected) {
+                return;
+            }
+            previous = systemServerCallback;
+            previousRecipient = callbackDeathRecipient;
+            systemServerCallback = null;
+            callbackDeathRecipient = null;
+            lastPingFailure = reason == null ? "callback cleared" : reason;
+        }
+        if (previous != null && previousRecipient != null) {
+            try {
+                previous.unlinkToDeath(previousRecipient, 0);
+            } catch (Throwable ignored) {
+                // Binder death may already have removed the recipient.
+            }
+        }
+        android.content.Context context = serviceContext;
+        if (context != null) {
+            RuntimeStatusStore.markPing(context, "FAILED", lastPingFailure);
+            RuntimeDebugStore.append(context, "app", Constants.EV_RUNTIME_BINDER_BIND_FAILED,
+                "runtime_service_callback", lastPingFailure);
+        }
+        Log.w(TAG, lastPingFailure);
     }
 }

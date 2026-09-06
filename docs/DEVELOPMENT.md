@@ -17,8 +17,8 @@
 | 项 | 值 |
 | --- | --- |
 | 语言 | Java（纯 Java，无 Kotlin 插件） |
-| Gradle | 8.10.2（Wrapper） |
-| AGP | 8.7.3 |
+| Gradle | 9.5.1（Wrapper） |
+| AGP | 9.2.1 |
 | libxposed API | `io.github.libxposed:api:102.0.0`（compileOnly） |
 | libxposed service | `io.github.libxposed:service:102.0.0`（App 侧远程配置写入） |
 | minSdk / targetSdk / compileSdk | 29 / 35 / 37 |
@@ -101,7 +101,17 @@ CI 与 Release 均运行 `.github/scripts/verify_xposed_meta.sh` 校验以上内
 2. Xposed 元数据门禁脚本
 3. 上传 debug APK Artifact（命名含版本号）
 
-### 4.2 release.yml（仅 `v*` Tag）
+### 4.2 debug-release.yml（`main` 自动更新）
+
+每次 `main` 分支更新或手动运行工作流都会：
+
+1. 编译、Lint、单元测试并校验 Xposed 元数据
+2. 生成未签名 debug APK 与 SHA-256 校验文件
+3. 创建或更新 GitHub `latest-debug` 滚动预发布（标记为 prerelease）
+
+该预发布只用于 CI 和真机验收，不冒充正式签名包，也不需要把签名材料放进仓库。
+
+### 4.3 release.yml（仅 `vX.Y.Z` Tag）
 
 1. 从 Tag 解析 `versionName`（如 `v0.1.0` → `0.1.0`）与 `versionCode`（`major*10000 + minor*100 + patch`），经 `-PversionName/-PversionCode` 注入构建——**Tag 是版本号唯一来源，不存在两套可漂移的版本号**
 2. 校验四个签名 Secret 齐备，缺失即失败（禁止用 debug keystore 出正式包）
@@ -110,14 +120,14 @@ CI 与 Release 均运行 `.github/scripts/verify_xposed_meta.sh` 校验以上内
 5. 门禁：`apksigner verify`、aapt2 校验 `versionName/versionCode` 与 Tag 一致、Xposed 元数据脚本
 6. 生成 `.sha256`，用 `gh release create` 发布 APK + 校验文件
 
-### 4.3 版本一致性与重启标记
+### 4.4 版本一致性与重启标记
 
 - `ModuleBuildInfo` 将 `BuildConfig.VERSION_NAME/VERSION_CODE` 编译期写入模块 dex；`MainModule` 不再用 system_server 的 PackageManager 查询安装 APK 版本。App 侧还通过官方 `XposedService.getRunningTargets()` 的 `HookedTarget.getLoadedVersionCode()` 展示目标进程真实加载 versionCode。
 - App 侧将 Binder 状态持久化，并与当前 APK 的 `versionName/versionCode` 比较：首页和诊断页显示两边版本；一致时显示「模块版本已同步」，不一致时显示「需要重载 system_server / 重启设备后生效」。未收到 ping/上报或版本不完整时不误报一致。
 - Release 与 CHANGELOG 必须明确写 `是否需要重启设备：是/否`。Release workflow 会比较当前 Tag 与上一正式 Tag 的文件变更：涉及 `xposed/`、`shared/`、Xposed 元数据、`AndroidManifest.xml` 或状态接收协议时标记「是」，否则标记「否」。
 - 开发期仅 App/UI 改动：安装新版 APK → 重启 App → 直接测试；涉及 Xposed/system_server 或通信协议：安装新版 APK → 根据版本卡提示重载/重启 → 验证两边版本一致。不要把整机重启作为所有版本的默认动作。
 
-### 4.4 首次发布前的签名配置
+### 4.5 首次正式发布前的签名配置
 
 生成一份专用于本项目的 keystore（本地执行，**不要提交仓库**）：
 

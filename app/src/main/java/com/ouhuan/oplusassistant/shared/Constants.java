@@ -117,6 +117,8 @@ public final class Constants {
     public static final String EV_XPOSED_SERVICE_WAIT_BEGIN =
         "XPOSED_SERVICE_WAIT_BEGIN";
     public static final String EV_XPOSED_SERVICE_BIND = "XPOSED_SERVICE_BIND";
+    public static final String EV_XPOSED_SERVICE_BIND_FAILED =
+        "XPOSED_SERVICE_BIND_FAILED";
     public static final String EV_XPOSED_SERVICE_BIND_TIMEOUT =
         "XPOSED_SERVICE_BIND_TIMEOUT";
     public static final String EV_XPOSED_SERVICE_DIED = "XPOSED_SERVICE_DIED";

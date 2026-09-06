@@ -6,7 +6,9 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Binder;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
@@ -29,6 +31,7 @@ import io.github.libxposed.api.XposedInterface;
 public final class RuntimeStatusBridge {
 
     private static final int PENDING_LIMIT = 64;
+    private static final long REBIND_DELAY_MS = 5_000L;
 
     public interface LifecycleSink {
         void onEvent(String event, String summary);
@@ -40,6 +43,8 @@ public final class RuntimeStatusBridge {
     private final Bundle state = new Bundle();
     private final ArrayDeque<Bundle> pendingEvents = new ArrayDeque<>();
     private final CallbackBinder callback = new CallbackBinder();
+    private final Handler retryHandler = new Handler(Looper.getMainLooper());
+    private final Runnable rebindRunnable = this::retryBind;
     private volatile int moduleUid;
     private final long moduleLoadedAt;
 
@@ -56,15 +61,17 @@ public final class RuntimeStatusBridge {
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            synchronized (lock) {
-                appService = null;
-                fallback = true;
-                state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
-                    RuntimeStatusContract.CHANNEL_DISCONNECTED);
-            }
-            String summary = "runtime service disconnected: " + name;
-            log(summary);
-            emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_FAILED, summary);
+            markDisconnected("runtime service disconnected: " + name);
+        }
+
+        @Override
+        public void onBindingDied(ComponentName name) {
+            markDisconnected("runtime service binding died: " + name);
+        }
+
+        @Override
+        public void onNullBinding(ComponentName name) {
+            markChannelFailed("runtime service returned null binding: " + name);
         }
     };
 
@@ -219,7 +226,7 @@ public final class RuntimeStatusBridge {
         return false;
     }
 
-    /** 发送状态快照；candidateEntries 为空时不清理已有候选列表。 */
+    /** 发送状态快照；candidateEntries 为 null 时保留已有候选，空列表表示清空。 */
     public boolean publishState(Map<String, String> fields,
                                 List<String> candidateEntries) {
         Bundle snapshot;
@@ -274,10 +281,15 @@ public final class RuntimeStatusBridge {
     }
 
     private void handleServiceConnected(IBinder service) {
-        if (service == null || !registerCallback(service)) {
+        if (service == null) {
+            markChannelFailed("onServiceConnected returned null binder");
+            return;
+        }
+        if (!registerCallback(service)) {
             markChannelFailed("register callback failed");
             return;
         }
+        retryHandler.removeCallbacks(rebindRunnable);
         synchronized (lock) {
             appService = service;
             fallback = false;
@@ -380,6 +392,7 @@ public final class RuntimeStatusBridge {
                 || !RuntimeStatusContract.CHANNEL_FAILED.equals(
                     state.getString(RuntimeStatusContract.KEY_CHANNEL_STATE, ""));
             appService = null;
+            bindAttempted = false;
             fallback = true;
             state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
                 RuntimeStatusContract.CHANNEL_FAILED);
@@ -389,6 +402,42 @@ public final class RuntimeStatusBridge {
         if (shouldEmit) {
             emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_FAILED, detail);
         }
+        scheduleRebind();
+    }
+
+    private void markDisconnected(String summary) {
+        synchronized (lock) {
+            appService = null;
+            bindAttempted = false;
+            fallback = true;
+            state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
+                RuntimeStatusContract.CHANNEL_DISCONNECTED);
+        }
+        log(summary);
+        emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_FAILED, summary);
+        scheduleRebind();
+    }
+
+    /** Binder 断线后自动有限速重连；事件/状态仍保留在内存快照中等待恢复。 */
+    private void scheduleRebind() {
+        if (contextProvider == null) {
+            return;
+        }
+        retryHandler.removeCallbacks(rebindRunnable);
+        retryHandler.postDelayed(rebindRunnable, REBIND_DELAY_MS);
+    }
+
+    private void retryBind() {
+        synchronized (lock) {
+            if (appService != null || contextProvider == null) {
+                return;
+            }
+            fallback = false;
+            bindAttempted = false;
+            state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
+                RuntimeStatusContract.CHANNEL_WAITING);
+        }
+        start(contextProvider);
     }
 
     private void recordEventLocked(LogEvent event) {

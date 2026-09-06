@@ -326,6 +326,10 @@ public final class RuntimeDebugStore {
             editor.putString(KEY_APP_STAGE, "registerListener")
                 .putString(KEY_APP_STATUS, "FAILED")
                 .putLong(KEY_APP_WAIT_END_AT, now);
+        } else if (Constants.EV_XPOSED_SERVICE_BIND_FAILED.equals(event)) {
+            editor.putString(KEY_APP_STAGE, "onServiceBind")
+                .putString(KEY_APP_STATUS, "FAILED")
+                .putLong(KEY_APP_WAIT_END_AT, now);
         } else if (Constants.EV_XPOSED_SERVICE_BIND.equals(event)) {
             editor.putString(KEY_APP_STAGE, "onServiceBind")
                 .putString(KEY_APP_STATUS, "BOUND")

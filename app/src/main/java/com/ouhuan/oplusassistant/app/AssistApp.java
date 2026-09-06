@@ -60,6 +60,18 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
     @Override
     public void onServiceBind(XposedService bound) {
         Context context = getApplicationContext();
+        if (bound == null) {
+            RuntimeDebugStore.append(context, "app",
+                Constants.EV_XPOSED_SERVICE_BIND_FAILED, "onServiceBind",
+                "framework delivered a null XposedService");
+            Log.w(TAG, "XposedService bind callback delivered null service");
+            synchronized (SERVICE_STATE_LOCK) {
+                if (service == null) {
+                    beginServiceWaitLocked(context, "null service delivered");
+                }
+            }
+            return;
+        }
         synchronized (SERVICE_STATE_LOCK) {
             service = bound;
             cancelServiceWaitLocked();
@@ -77,7 +89,7 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
     public void onServiceDied(XposedService died) {
         Context context = getApplicationContext();
         synchronized (SERVICE_STATE_LOCK) {
-            boolean wasCurrent = died == service;
+            boolean wasCurrent = died == null || died == service;
             if (!wasCurrent) {
                 return;
             }

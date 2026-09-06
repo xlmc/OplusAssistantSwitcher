@@ -314,12 +314,28 @@ public class HomeActivity extends AppCompatActivity {
 
     /** 首页仅显示应用名，包名/组件名等开发信息移至诊断页。 */
     private String describePackageLabel(String pkg) {
+        if (pkg == null || pkg.trim().isEmpty()) {
+            return getString(R.string.home_target_selected);
+        }
+        // system_server 候选的组件 label 比 App 侧 PM 更权威，也能覆盖
+        // Android 11+ package visibility 导致的本地查询失败。
+        for (com.ouhuan.oplusassistant.shared.AssistantCandidate candidate
+                : AssistantStateStore.candidates(this)) {
+            if (pkg.equals(candidate.packageName) && candidate.label != null
+                && !candidate.label.trim().isEmpty()) {
+                return candidate.label;
+            }
+        }
         try {
             PackageManager pm = getPackageManager();
             android.content.pm.ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
-            return String.valueOf(pm.getApplicationLabel(info));
+            CharSequence label = pm.getApplicationLabel(info);
+            if (label != null && label.length() > 0) {
+                return String.valueOf(label);
+            }
         } catch (Throwable t) {
-            return pkg;
+            // 不把包名泄漏到首页；详细失败信息由诊断页/Debug 日志承接。
         }
+        return getString(R.string.home_target_selected);
     }
 }

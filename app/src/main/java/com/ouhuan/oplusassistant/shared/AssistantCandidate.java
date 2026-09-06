@@ -3,8 +3,9 @@ package com.ouhuan.oplusassistant.shared;
 /**
  * 助手选择页候选模型：仅包含已安装、组件启用、可解析且可实际调用的
  * 第三方语音助手（开发书 5.2 / 9，Issue #1 收紧后的规则）。
- * 入选前提：包内声明 VoiceInteractionService 且该服务要求
- * BIND_VOICE_INTERACTION 权限；ACTION_ASSIST 仅作为可调用入口的辅助信号。
+ * 入选前提：候选必须来自系统级助手信号（VoiceInteractionService、
+ * ROLE_ASSISTANT 或系统已配置的助手组件），并且存在可调用入口；
+ * ACTION_ASSIST 仅作为入口验证信号，不能单独构成资格。
  */
 public final class AssistantCandidate {
 
@@ -33,10 +34,10 @@ public final class AssistantCandidate {
                               String launchMethod,
                               boolean hasVoiceInteractionService,
                               String eligibilitySource) {
-        this.packageName = packageName;
-        this.label = label;
-        this.componentName = componentName;
-        this.launchMethod = launchMethod;
+        this.packageName = packageName == null ? "" : packageName;
+        this.label = label == null ? "" : label;
+        this.componentName = componentName == null ? "" : componentName;
+        this.launchMethod = launchMethod == null ? "" : launchMethod;
         this.hasVoiceInteractionService = hasVoiceInteractionService;
         this.eligibilitySource = eligibilitySource == null || eligibilitySource.isEmpty()
             ? "ACTION_ASSIST_VERIFIED"

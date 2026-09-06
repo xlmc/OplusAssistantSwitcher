@@ -22,6 +22,7 @@ import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.system.AssistantScanner;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,22 +65,35 @@ public class AssistantPickerActivity extends AppCompatActivity {
 
     private void load() {
         AppExecutors.io().execute(() -> {
-            List<AssistantCandidate> local =
-                new AssistantScanner().scan(AssistantPickerActivity.this);
-            List<AssistantCandidate> fromSystemServer =
-                AssistantStateStore.candidates(AssistantPickerActivity.this);
-            List<AssistantCandidate> merged = merge(local, fromSystemServer);
+            List<AssistantCandidate> merged;
+            boolean scanSucceeded = true;
+            try {
+                List<AssistantCandidate> local =
+                    new AssistantScanner().scan(AssistantPickerActivity.this);
+                List<AssistantCandidate> fromSystemServer =
+                    AssistantStateStore.candidates(AssistantPickerActivity.this);
+                merged = merge(local, fromSystemServer);
+            } catch (Throwable t) {
+                scanSucceeded = false;
+                merged = Collections.emptyList();
+                com.ouhuan.oplusassistant.data.RuntimeDebugStore.append(this, "app",
+                    com.ouhuan.oplusassistant.shared.Constants.EV_RESOLVER_QUERY_FAILED,
+                    "assistant_picker_scan", "candidate scan failed", t);
+            }
             String current = ConfigStore.selectedPackage(AssistantPickerActivity.this);
+            boolean finalScanSucceeded = scanSucceeded;
+            List<AssistantCandidate> finalMerged = merged;
             runOnUiThread(() -> {
-                adapter.setItems(merged, current);
+                adapter.setItems(finalMerged, current);
                 pending = findCandidate(current);
                 if (pending != null) {
                     btnConfirm.setEnabled(true);
                     btnConfirm.setAlpha(1f);
                 }
-                if (merged.isEmpty()) {
+                if (finalMerged.isEmpty()) {
                     // 空状态必须可见，不能整页留白（Issue #1 P0-3）
-                    tvEmpty.setText(R.string.picker_empty);
+                    tvEmpty.setText(finalScanSucceeded
+                        ? R.string.picker_empty : R.string.picker_scan_failed);
                     tvEmpty.setVisibility(View.VISIBLE);
                 } else {
                     tvEmpty.setVisibility(View.GONE);
@@ -88,7 +102,7 @@ public class AssistantPickerActivity extends AppCompatActivity {
         });
     }
 
-    /** 本地扫描 ∪ system_server 候选，按包名去重（本地优先，system_server 补齐可见性缺口）。 */
+    /** 本地扫描 ∪ system_server 候选，按包名去重；system_server 是权威来源。 */
     private List<AssistantCandidate> merge(List<AssistantCandidate> local,
                                            List<AssistantCandidate> fromSystemServer) {
         Map<String, AssistantCandidate> byPackage = new LinkedHashMap<>();
@@ -96,11 +110,17 @@ public class AssistantPickerActivity extends AppCompatActivity {
             byPackage.put(candidate.packageName, candidate);
         }
         for (AssistantCandidate candidate : fromSystemServer) {
-            if (!byPackage.containsKey(candidate.packageName)) {
-                byPackage.put(candidate.packageName, candidate);
-            }
+            // system_server 具备完整包可见性，且组件 label/入口是最终判定结果；
+            // 它必须覆盖 App 侧可能受 package visibility 影响的同包旧值。
+            byPackage.put(candidate.packageName, candidate);
         }
-        return new ArrayList<>(byPackage.values());
+        ArrayList<AssistantCandidate> result = new ArrayList<>(byPackage.values());
+        Collections.sort(result, (left, right) -> {
+            String leftLabel = left.label == null ? "" : left.label;
+            String rightLabel = right.label == null ? "" : right.label;
+            return leftLabel.compareToIgnoreCase(rightLabel);
+        });
+        return result;
     }
 
     private AssistantCandidate findCandidate(String pkg) {
@@ -173,11 +193,15 @@ public class AssistantPickerActivity extends AppCompatActivity {
             AssistantCandidate item = items.get(position);
             PackageManager pm = holder.itemView.getContext().getPackageManager();
             holder.tvLabel.setText(item.label);
+            holder.ivIcon.setImageResource(R.drawable.ic_card_assistant);
             try {
                 holder.ivIcon.setImageDrawable(pm.getApplicationIcon(item.packageName));
             } catch (Throwable ignored) {
+                // system_server 候选可能因 App 侧 package visibility 无法加载图标；
+                // 保留稳定的助手图标占位，不让正式列表出现空白块。
             }
-            holder.rb.setChecked(item.packageName.equals(selectedPackage));
+            holder.rb.setChecked(item.packageName != null
+                && item.packageName.equals(selectedPackage));
             holder.itemView.setOnClickListener(v -> select(item));
         }
 

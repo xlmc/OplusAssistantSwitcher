@@ -1,6 +1,6 @@
 # Changelog
 
-本项目所有重要变更记录于此。版本号遵循 [Semantic Versioning](https://semver.org/)，正式 Release 仅由 `v*` Git Tag 触发，`versionName` 与 Tag 保持一致。
+本项目所有重要变更记录于此。版本号遵循 [Semantic Versioning](https://semver.org/)，正式 Release 仅由 `vX.Y.Z` Git Tag 触发，`versionName` 与 Tag 保持一致。
 
 ## [Unreleased]
 
@@ -16,6 +16,11 @@
 - 注册成功后等待 onServiceBind 增加 15 秒明确超时状态；Remote Preferences 增加打开开始事件
 - system_server Hook 里程碑始终同步写入 LSPosed/Xposed 日志，诊断页提供独立日志 Tag 与事件检索说明
 - 诊断页直接展示 Xposed listener 的注册阶段、`onServiceBind` 是否触发、注册到绑定的等待时长与最后异常，不再要求从日志猜测“已注册但未绑定”
+- system_server 候选结果覆盖 App 侧受 package visibility 影响的同包旧值；保留 Google/Gemini 等系统预装第三方助手，不再把所有系统应用误当作 OEM 原始目标过滤
+- 首页在本地标签读取失败时不泄露包名；选择页使用 system_server 权威 label，并提供稳定图标占位与扫描失败空状态
+- 诊断页“复制完整 Debug 日志”补齐标准助手、system_server 当前助手、候选资格来源、当前选择与日志统计
+- Binder 断线后自动限速重连；回调 Binder 死亡会明确记录失败阶段，广播降级通道也会更新运行态快照
+- 增加 `latest-debug` 自动滚动预发布工作流；正式签名 Release 仍由 `vX.Y.Z` Tag 触发
 
 ### Added（V1，对应开发书 v1.0）
 
@@ -28,4 +33,4 @@
 - DiagnosticReporter：轻量日志事件异步广播上报，App 侧 Room 持久化；日志页支持查看、按失败筛选、复制单条、复制完整诊断、清空
 - 版本一致性状态：首页与诊断页同时显示 App 版本、system_server 已加载模块版本；不一致时明确提示需要重载，避免把旧 Hook 状态误报为已生效
 - App 五页面：首页 / 助手选择 / 日志 / 诊断信息 / 设置
-- GitHub Actions：ci.yml（编译 + Lint + 单元测试 + Xposed 元数据门禁 + debug Artifact）、release.yml（v* Tag 触发、签名、SHA-256、版本一致性门禁、自动创建 Release）
+- GitHub Actions：ci.yml（编译 + Lint + 单元测试 + Xposed 元数据门禁 + debug Artifact）、debug-release.yml（main 自动更新 `latest-debug` 预发布）、release.yml（vX.Y.Z Tag 触发、签名、SHA-256、版本一致性门禁、自动创建正式 Release）

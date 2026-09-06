@@ -43,6 +43,9 @@ public final class AssistantStateStore {
     /** 收到状态广播后落库（必须在后台线程调用）。 */
     public static void apply(Context context, Map<String, String> data,
                              List<String> candidateEntries) {
+        if (context == null || data == null) {
+            return;
+        }
         SharedPreferences.Editor editor = prefs(context).edit();
         editor.putString(KEY_NAME, safe(data.get(Constants.STATE_CURRENT_NAME)));
         editor.putString(KEY_PACKAGE, safe(data.get(Constants.STATE_CURRENT_PACKAGE)));
@@ -123,9 +126,9 @@ public final class AssistantStateStore {
         if (raw == null || raw.isEmpty()) {
             return result;
         }
-        for (String entry : raw.split(SEP_ENTRY)) {
-            String[] fields = entry.split(SEP_FIELD);
-            if (fields.length < 4) {
+        for (String entry : raw.split(SEP_ENTRY, -1)) {
+            String[] fields = entry.split(SEP_FIELD, -1);
+            if (fields.length < 4 || fields[1].isEmpty() || fields[2].isEmpty()) {
                 continue;
             }
             String eligibility = fields.length > 4 ? fields[4] : "";

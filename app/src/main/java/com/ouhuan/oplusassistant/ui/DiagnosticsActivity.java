@@ -167,8 +167,6 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 versionComparison);
             String runtimeStatus = describeRuntime(runtime);
             String configState = describeConfigState(config, runtime);
-            String debugLog = buildDebugLog(appVersion, runtime, config, moduleVersion,
-                service, device);
 
             // 候选清单与每个候选的资格来源（本地扫描 ∪ system_server 上报，仅诊断页展示）
             StringBuilder candidates = new StringBuilder();
@@ -176,17 +174,26 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 new AssistantScanner().scan(this);
             List<AssistantCandidate> merged = new java.util.ArrayList<>(scanned);
             for (AssistantCandidate remote : AssistantStateStore.candidates(this)) {
-                boolean present = false;
-                for (AssistantCandidate localCandidate : merged) {
+                boolean replaced = false;
+                for (int i = 0; i < merged.size(); i++) {
+                    AssistantCandidate localCandidate = merged.get(i);
                     if (localCandidate.packageName.equals(remote.packageName)) {
-                        present = true;
+                        // system_server 拥有完整包可见性，候选 label/入口应覆盖
+                        // App 侧可能受 visibility 限制得到的旧值。
+                        merged.set(i, remote);
+                        replaced = true;
                         break;
                     }
                 }
-                if (!present) {
+                if (!replaced) {
                     merged.add(remote);
                 }
             }
+            java.util.Collections.sort(merged, (left, right) -> {
+                String leftLabel = left.label == null ? "" : left.label;
+                String rightLabel = right.label == null ? "" : right.label;
+                return leftLabel.compareToIgnoreCase(rightLabel);
+            });
             if (merged.isEmpty()) {
                 candidates.append(getString(R.string.picker_empty));
             } else {
@@ -220,6 +227,13 @@ public class DiagnosticsActivity extends AppCompatActivity {
             int failures = LogDb.get(this).dao().failureCount();
             String stats = getString(R.string.diagnostics_total) + ": " + total
                 + "\n" + getString(R.string.diagnostics_failures) + ": " + failures;
+
+            // 必须在候选扫描和统计完成后构造导出文本，确保“一键复制完整 Debug
+            // 日志”包含当前助手、候选资格来源、当前选择和统计，而不是只包含
+            // Binder/配置快照。
+            String debugLog = buildDebugLog(appVersion, runtime, config, moduleVersion,
+                service, device, assistantDetail, systemServer, candidates.toString(),
+                selection, stats);
 
             String finalDevice = device;
             String finalService = service;
@@ -342,7 +356,9 @@ public class DiagnosticsActivity extends AppCompatActivity {
 
     private String buildDebugLog(AppVersion appVersion, RuntimeStatusStore.Snapshot runtime,
                                  ConfigStore.Status config, String moduleVersion,
-                                 String service, String device) {
+                                 String service, String device, String assistantDetail,
+                                 String systemServer, String candidates, String selection,
+                                 String stats) {
         StringBuilder sb = new StringBuilder();
         sb.append("Oplus Assistant Switcher Debug\n")
             .append("appVersion=").append(orDash(appVersion.name))
@@ -352,6 +368,11 @@ public class DiagnosticsActivity extends AppCompatActivity {
             .append("moduleVersion=\n").append(moduleVersion).append('\n')
             .append("runtime=\n").append(describeRuntime(runtime)).append('\n')
             .append("config=\n").append(describeConfigState(config, runtime)).append('\n')
+            .append("standardAssistant=\n").append(assistantDetail).append('\n')
+            .append("currentAssistantFromSystemServer=\n").append(systemServer).append('\n')
+            .append("candidates=\n").append(candidates).append('\n')
+            .append("selection=\n").append(selection).append('\n')
+            .append("stats=\n").append(stats).append('\n')
             .append("recentEvents(last 50, newest first)=\n")
             .append(RuntimeDebugStore.format(RuntimeDebugStore.recent(this, 50)));
         return sb.toString();
@@ -439,7 +460,9 @@ public class DiagnosticsActivity extends AppCompatActivity {
             sb.append("\nstate=registered_but_not_bound");
         }
         if ("FAILED".equals(lifecycle.status)) {
-            sb.append("\nstate=registration_failed");
+            sb.append("\nstate=")
+                .append(Constants.EV_XPOSED_SERVICE_BIND_FAILED.equals(lifecycle.lastEvent)
+                    ? "bind_failed" : "registration_failed");
         }
         if ("TIMEOUT".equals(lifecycle.status)) {
             sb.append("\nstate=bind_timeout");

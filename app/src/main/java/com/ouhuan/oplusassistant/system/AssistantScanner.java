@@ -164,10 +164,15 @@ public final class AssistantScanner {
         return false;
     }
 
-    /** 系统预装且担任当前助手 → 厂商原始目标；第三方应用不受影响。 */
+    /** OEM 系统预装且担任当前助手 → 厂商原始目标；第三方应用不受影响。 */
     private boolean isVendorOriginalTarget(Context context, PackageManager pm,
                                            String pkg, String currentPkg) {
         if (currentPkg == null || currentPkg.isEmpty() || !currentPkg.equals(pkg)) {
+            return false;
+        }
+        // 不能把 Google 等系统预装的第三方助手一并过滤掉；这里只排除
+        // ColorOS/OPlus 自带的系统原始目标。具体包名仍来自设备真实解析结果。
+        if (!isOemPackage(pkg)) {
             return false;
         }
         try {
@@ -179,6 +184,18 @@ public final class AssistantScanner {
                 "package=" + pkg);
             return false;
         }
+    }
+
+    private boolean isOemPackage(String pkg) {
+        if (pkg == null) {
+            return false;
+        }
+        for (String prefix : Constants.OEM_ASSISTANT_PACKAGE_PREFIXES) {
+            if (pkg.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isAppEnabled(Context context, PackageManager pm, String pkg) {

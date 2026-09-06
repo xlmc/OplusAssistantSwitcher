@@ -51,6 +51,7 @@
     <string name="home_target_not_taken_over">未接管（系统原始目标）</string>
     <string name="home_target_secondary_disabled">模块关闭时电源键执行系统原逻辑</string>
     <string name="home_target_none_selected">未选择</string>
+    <string name="home_target_selected">已选择助手</string>
     <string name="home_target_pick_hint">点击下方按钮选择助手并接管</string>
     <string name="home_target_secondary_taken_over">0.5 秒电源键将唤醒所选助手</string>
     <string name="btn_pick_assistant">选择助手  ›</string>
@@ -67,6 +68,7 @@
     <!-- 助手选择页 -->
     <string name="picker_subtitle">请选择要通过 0.5 秒电源键唤醒的语音助手</string>
     <string name="picker_empty">未检测到可用的第三方语音助手</string>
+    <string name="picker_scan_failed">助手列表暂时无法读取，请打开诊断信息查看原因</string>
     <string name="picker_scanning">正在扫描可用语音助手…</string>
     <string name="picker_note_main">ⓘ 仅显示已安装且可作为系统语音助手使用的应用</string>
     <string name="picker_note_sub">未找到想要的助手？请先安装对应应用</string>
