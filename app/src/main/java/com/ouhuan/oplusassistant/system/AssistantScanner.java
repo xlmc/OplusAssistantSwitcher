@@ -183,10 +183,12 @@ public final class AssistantScanner {
     private static final class EntryResult {
         final String component;
         final String label;
+        final String method;
 
-        EntryResult(String component, String label) {
+        EntryResult(String component, String label, String method) {
             this.component = component;
             this.label = label;
+            this.method = method;
         }
     }
 
@@ -201,8 +203,11 @@ public final class AssistantScanner {
                     info.activityInfo.packageName,
                     info.activityInfo.name).flattenToString();
                 CharSequence label = info.loadLabel(pm);
+                String method = Intent.ACTION_ASSIST.equals(action)
+                    ? Constants.LAUNCH_METHOD_ASSIST
+                    : Constants.LAUNCH_METHOD_VOICE_COMMAND;
                 return new EntryResult(component,
-                    label == null ? "" : String.valueOf(label));
+                    label == null ? "" : String.valueOf(label), method);
             }
         } catch (Throwable ignored) {
         }
