@@ -12,6 +12,7 @@
 - 版本信息改为编译期写入模块 dex，并结合 libxposed `HookedTarget` 的实际加载 versionCode 判断是否需要重载
 - 配置写入以 Remote Preferences `commit()` 成功为生效闸门；断线/失败时保留本地期望、显示等待同步，并在服务重连后自动 reconcile
 - 诊断页增加 Binder ping、真实 `system_server` 进程/加载版本、独立 Hook 生命周期、状态通道、电源键匹配及三方配置状态
+- 增加 App↔XposedService、system_server Hook、运行态 Binder、配置读取与 0x3F3 路由的分阶段 Debug 事件；异常至少记录 stage、错误类型与消息，诊断页支持复制最近 50 条完整记录
 
 ### Added（V1，对应开发书 v1.0）
 

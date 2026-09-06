@@ -40,6 +40,9 @@ public final class DiagnosticReporter {
             pkg = xposed.getModuleApplicationInfo().packageName;
         } catch (Throwable t) {
             pkg = Constants.MODULE_PACKAGE;
+            android.util.Log.w(Constants.MODULE_PACKAGE,
+                "read module package failed: " + t.getClass().getName() + ": "
+                    + t.getMessage(), t);
         }
         this.modulePackage = pkg;
         this.androidVersion = "Android " + android.os.Build.VERSION.RELEASE
@@ -114,7 +117,7 @@ public final class DiagnosticReporter {
             logToXposed("sent LOG_EVENT event=" + event.event);
         } catch (Throwable t) {
             buffer(event);
-            safeLog("send LOG_EVENT failed (" + event.event + "): " + t);
+            safeLog("send LOG_EVENT failed (" + event.event + ")", t);
         }
     }
 
@@ -131,8 +134,10 @@ public final class DiagnosticReporter {
             if (xposed != null) {
                 xposed.log(android.util.Log.INFO, modulePackage, event.toReadableText());
             }
-        } catch (Throwable ignored) {
-            // 日志通道不可用时保持静默
+        } catch (Throwable t) {
+            android.util.Log.w(modulePackage,
+                "fallback Xposed log failed: " + t.getClass().getName() + ": "
+                    + t.getMessage(), t);
         }
     }
 
@@ -152,7 +157,7 @@ public final class DiagnosticReporter {
                             try {
                                 onSystemReady.run();
                             } catch (Throwable t) {
-                                safeLog("onSystemReady callback failed: " + t);
+                                safeLog("onSystemReady callback failed", t);
                             }
                         }
                         return null;
@@ -160,7 +165,7 @@ public final class DiagnosticReporter {
                 }
             }
         } catch (Throwable t) {
-            safeLog("installFlushHook failed: " + t);
+            safeLog("installFlushHook failed", t);
         }
     }
 
@@ -181,7 +186,7 @@ public final class DiagnosticReporter {
         }
         Context context = contextProvider == null ? null : contextProvider.get();
         if (context == null) {
-            safeLog("reportState skipped: no system context");
+            safeLog("reportState skipped: no system context", null);
             return;
         }
         try {
@@ -190,7 +195,7 @@ public final class DiagnosticReporter {
             String name = fields == null ? "" : String.valueOf(fields.get(Constants.STATE_CURRENT_NAME));
             logToXposed("sent STATE_REPORT name=" + name + " candidates=" + count);
         } catch (Throwable t) {
-            safeLog("reportState failed: " + t);
+            safeLog("reportState failed", t);
         }
     }
 
@@ -230,12 +235,23 @@ public final class DiagnosticReporter {
     }
 
     private void safeLog(String msg) {
+        safeLog(msg, null);
+    }
+
+    private void safeLog(String msg, Throwable error) {
         try {
             if (xposed != null) {
-                xposed.log(android.util.Log.WARN, modulePackage, msg);
+                xposed.log(android.util.Log.WARN, modulePackage,
+                    error == null ? msg : msg + ": " + error.getClass().getName() + ": "
+                        + error.getMessage());
+                return;
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable loggingFailure) {
+            android.util.Log.w(modulePackage,
+                msg + " (Xposed log failed: " + loggingFailure.getClass().getName()
+                    + ": " + loggingFailure.getMessage() + ")", error);
         }
+        android.util.Log.w(modulePackage, msg, error);
     }
 
     /** 直接写 LSPosed 模块日志（回传通道之外的诊断兜底，Issue #1 P0）。 */
@@ -244,7 +260,10 @@ public final class DiagnosticReporter {
             if (xposed != null) {
                 xposed.log(android.util.Log.INFO, modulePackage, msg);
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            android.util.Log.w(modulePackage,
+                "Xposed diagnostic log failed: " + t.getClass().getName() + ": "
+                    + t.getMessage(), t);
         }
     }
 

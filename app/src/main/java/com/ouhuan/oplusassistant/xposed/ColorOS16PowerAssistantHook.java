@@ -137,11 +137,19 @@ public final class ColorOS16PowerAssistantHook {
         }
 
         // 命中 0.5 秒助手唤醒事件（开发书 2.2 调用流程）
-        reporter.hookEvent(Constants.EV_POWER_ASSIST_EVENT_MATCHED,
+        reporter.hookEvent(Constants.EV_POWER_ASSIST_0X3F3_MATCHED,
             "what=0x" + Integer.toHexString(Constants.MSG_POWER_ASSIST_0X3F3));
         RuntimeConfig.Snapshot snapshot = runtimeConfig.refresh();
-        if (snapshot == null || !snapshot.enabled) {
-            // 模块未启用（或偏好读取失败）：执行系统原逻辑
+        if (snapshot == null) {
+            reporter.hookEvent(Constants.EV_CONFIG_READ,
+                "enabled=false; readFailed=true; stage=power_assist_0x3f3");
+            reporter.hookEvent(Constants.EV_CONFIG_READ_FAILED,
+                "stage=power_assist_0x3f3; enabled=false; no snapshot");
+            // 偏好读取失败：执行系统原逻辑
+            return chain.proceed();
+        }
+        if (!snapshot.enabled) {
+            // 模块未启用：执行系统原逻辑
             return chain.proceed();
         }
 
@@ -151,13 +159,14 @@ public final class ColorOS16PowerAssistantHook {
         } catch (Throwable t) {
             reportTerminal(snapshot, Constants.EV_LAUNCH_EXCEPTION,
                 LaunchResult.LAUNCH_EXCEPTION, ErrorCodes.UNKNOWN_ERROR,
-                summarize(t, snapshot.detailDiagnostics));
+                "route", t.getClass().getName(), summarize(t, snapshot.detailDiagnostics));
         }
         if (onRouteComplete != null) {
             try {
                 onRouteComplete.run();
-            } catch (Throwable ignored) {
-                // 状态上报失败不影响路由结果
+            } catch (Throwable t) {
+                reporter.hookEvent(Constants.EV_STATE_CHANNEL_FAILED,
+                    "stage=state_report; " + t.getClass().getName() + ": " + t.getMessage());
             }
         }
         return null;
@@ -184,7 +193,7 @@ public final class ColorOS16PowerAssistantHook {
         if (context == null) {
             reportTerminal(snapshot, Constants.EV_RESOLVE_FAILED,
                 LaunchResult.RESOLVE_FAILED, ErrorCodes.RESOLVE_FAILED,
-                "system context unavailable");
+                "resolve", null, "system context unavailable");
             return;
         }
 
@@ -192,7 +201,7 @@ public final class ColorOS16PowerAssistantHook {
             resolver.resolve(context, snapshot, systemDefault);
         if (!outcome.ok()) {
             reportTerminal(snapshot, failureEventFor(outcome.result), outcome.result,
-                outcome.failureCode, outcome.summary);
+                outcome.failureCode, "resolve", null, outcome.summary);
             return;
         }
 
@@ -239,11 +248,17 @@ public final class ColorOS16PowerAssistantHook {
             ? Constants.EV_SECURITY_EXCEPTION
             : Constants.EV_LAUNCH_EXCEPTION;
         reportTerminal(snapshot, event, launch.result, mapFailureCode(launch.result),
-            launch.summary);
+            "launch", launch.exceptionType, launch.summary);
     }
 
     private void reportTerminal(RuntimeConfig.Snapshot snapshot, String event,
                                 LaunchResult result, String failureCode, String summary) {
+        reportTerminal(snapshot, event, result, failureCode, "route", null, summary);
+    }
+
+    private void reportTerminal(RuntimeConfig.Snapshot snapshot, String event,
+                                LaunchResult result, String failureCode, String stage,
+                                String exceptionType, String summary) {
         LogEvent terminal = new LogEvent();
         terminal.kind = Constants.KIND_CALL;
         terminal.event = event;
@@ -256,7 +271,9 @@ public final class ColorOS16PowerAssistantHook {
         terminal.result = result.name();
         terminal.failureCode = failureCode == null || failureCode.isEmpty()
             ? result.name() : failureCode;
-        terminal.exceptionSummary = summary == null || summary.isEmpty() ? "" : summary;
+        terminal.exceptionType = exceptionType == null ? "" : exceptionType;
+        terminal.exceptionSummary = "stage=" + (stage == null ? "route" : stage)
+            + (summary == null || summary.isEmpty() ? "" : "; " + summary);
         reporter.report(terminal);
     }
 

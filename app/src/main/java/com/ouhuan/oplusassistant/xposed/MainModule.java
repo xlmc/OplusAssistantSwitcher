@@ -43,13 +43,14 @@ public class MainModule extends XposedModule {
                 detach();
                 return;
             }
-            runtimeBridge = new RuntimeStatusBridge(this);
+            runtimeBridge = createRuntimeBridge();
             reporter.setRuntimeBridge(runtimeBridge);
             reporter.hookEvent(Constants.EV_MODULE_LOADED,
                 "process=" + param.getProcessName()
                     + ", framework=" + getFrameworkName() + " " + getFrameworkVersion()
                     + ", api=" + getApiVersion()
-                    + ", scope=system");
+                    + ", scope=system, loadedVersion=" + ModuleBuildInfo.VERSION_NAME
+                    + "/" + ModuleBuildInfo.VERSION_CODE);
         } catch (Throwable t) {
             safeLog("onModuleLoaded failed", t);
         }
@@ -63,11 +64,18 @@ public class MainModule extends XposedModule {
                 reporter = new DiagnosticReporter(this);
             }
             if (runtimeBridge == null) {
-                runtimeBridge = new RuntimeStatusBridge(this);
+                runtimeBridge = createRuntimeBridge();
                 reporter.setRuntimeBridge(runtimeBridge);
             }
 
-            contextProvider = new ContextProvider();
+            contextProvider = new ContextProvider((event, summary, error) -> {
+                if (reporter != null) {
+                    String exception = error == null ? "unknown" : error.getClass().getName()
+                        + ": " + error.getMessage();
+                    reporter.hookEvent(event, summary + "; exception="
+                        + exception);
+                }
+            });
             reporter.setContextProvider(contextProvider);
             contextProvider.setReadyListener(this::onSystemContextReady);
             reporter.hookEvent(Constants.EV_SYSTEM_SERVER_STARTING,
@@ -85,9 +93,23 @@ public class MainModule extends XposedModule {
             reporter.installFlushHook(this, classLoader, this::onAmsSystemReady);
 
             RuntimeConfig runtimeConfig = new RuntimeConfig(this,
-                snapshot -> runtimeBridge.updateConfig(snapshot));
-            runtimeConfig.refresh();
-            resolver = new AssistantResolver();
+                snapshot -> {
+                    reporter.hookEvent(Constants.EV_CONFIG_READ,
+                        "enabled=" + snapshot.enabled + ",selectedPackage="
+                            + snapshot.selectedPackage);
+                    runtimeBridge.updateConfig(snapshot);
+                });
+            RuntimeConfig.Snapshot initialConfig = runtimeConfig.refresh();
+            if (initialConfig == null) {
+                reporter.hookEvent(Constants.EV_CONFIG_READ_FAILED,
+                    "stage=initial_read; enabled=false; no snapshot");
+            }
+            resolver = new AssistantResolver((stage, error) -> {
+                String detail = error == null ? "unknown" : error.getClass().getName()
+                    + ": " + error.getMessage();
+                reporter.hookEvent(Constants.EV_RESOLVER_QUERY_FAILED,
+                    "stage=" + stage + "; " + detail);
+            });
             ColorOS16PowerAssistantHook.install(this, classLoader, runtimeConfig,
                 reporter, contextProvider, resolver, new AssistantLauncher(),
                 this::sendAssistantStateReport);
@@ -120,6 +142,14 @@ public class MainModule extends XposedModule {
             reporter.hookEvent(Constants.EV_STATE_CHANNEL_FAILED,
                 "runtime Binder channel unavailable");
         }
+    }
+
+    private RuntimeStatusBridge createRuntimeBridge() {
+        return new RuntimeStatusBridge(this, (event, summary) -> {
+            if (reporter != null) {
+                reporter.hookEvent(event, summary);
+            }
+        });
     }
 
     private void onAmsSystemReady() {
@@ -186,8 +216,9 @@ public class MainModule extends XposedModule {
     private void safeLog(String message, Throwable t) {
         try {
             log(Log.ERROR, TAG, message + ": " + t, t);
-        } catch (Throwable ignored) {
-            // 日志通道不可用时保持静默，绝不影响 system_server
+        } catch (Throwable loggingFailure) {
+            Log.e(TAG, message + ": " + t.getClass().getName() + ": "
+                + t.getMessage() + "; loggingFailure=" + loggingFailure.getClass().getName(), t);
         }
     }
 }

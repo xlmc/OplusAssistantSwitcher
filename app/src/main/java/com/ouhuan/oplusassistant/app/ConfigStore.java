@@ -3,6 +3,7 @@ package com.ouhuan.oplusassistant.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.ouhuan.oplusassistant.data.RuntimeDebugStore;
 import com.ouhuan.oplusassistant.shared.Constants;
 
 import io.github.libxposed.service.XposedService;
@@ -65,7 +66,8 @@ public final class ConfigStore {
             .putBoolean(KEY_PENDING_ENABLED, true)
             .putBoolean(KEY_SYNC_PENDING, true)
             .apply();
-        boolean remoteOk = putRemote(p -> p.putBoolean(Constants.KEY_MODULE_ENABLED, enabled));
+        boolean remoteOk = putRemote(context, "enabled",
+            p -> p.putBoolean(Constants.KEY_MODULE_ENABLED, enabled));
         finishEnabled(context, enabled, remoteOk);
         return remoteOk;
     }
@@ -76,7 +78,8 @@ public final class ConfigStore {
             .putBoolean(KEY_PENDING_DETAIL, true)
             .putBoolean(KEY_SYNC_PENDING, true)
             .apply();
-        boolean remoteOk = putRemote(p -> p.putBoolean(Constants.KEY_DETAIL_DIAGNOSTICS, detail));
+        boolean remoteOk = putRemote(context, "detail",
+            p -> p.putBoolean(Constants.KEY_DETAIL_DIAGNOSTICS, detail));
         finishDetail(context, detail, remoteOk);
         return remoteOk;
     }
@@ -93,7 +96,8 @@ public final class ConfigStore {
         putNullable(editor, KEY_DESIRED_SOURCE, eligibilitySource);
         editor.apply();
 
-        boolean remoteOk = putRemote(p -> p.putString(Constants.KEY_SELECTED_PACKAGE, pkg)
+        boolean remoteOk = putRemote(context, "selection",
+            p -> p.putString(Constants.KEY_SELECTED_PACKAGE, pkg)
             .putString(Constants.KEY_SELECTED_COMPONENT, component));
         finishSelection(context, pkg, component, eligibilitySource, remoteOk);
         return remoteOk;
@@ -119,7 +123,8 @@ public final class ConfigStore {
             .remove(KEY_DESIRED_SOURCE);
         editor.apply();
 
-        boolean remoteOk = putRemote(p -> p.putString(Constants.KEY_SELECTED_PACKAGE, null)
+        boolean remoteOk = putRemote(context, "selection",
+            p -> p.putString(Constants.KEY_SELECTED_PACKAGE, null)
             .putString(Constants.KEY_SELECTED_COMPONENT, null));
         finishSelection(context, null, null, null, remoteOk);
         return remoteOk;
@@ -131,7 +136,12 @@ public final class ConfigStore {
         boolean pendingEnabled = p.getBoolean(KEY_PENDING_ENABLED, false);
         boolean pendingDetail = p.getBoolean(KEY_PENDING_DETAIL, false);
         boolean pendingSelection = p.getBoolean(KEY_PENDING_SELECTION, false);
+        RuntimeDebugStore.append(context, "app", Constants.EV_CONFIG_RECONCILE_BEGIN,
+            "config_reconcile", "enabled=" + pendingEnabled + ",detail=" + pendingDetail
+                + ",selection=" + pendingSelection);
         if (!pendingEnabled && !pendingDetail && !pendingSelection) {
+            RuntimeDebugStore.append(context, "app", Constants.EV_CONFIG_RECONCILE_OK,
+                "config_reconcile", "nothing_pending");
             return;
         }
 
@@ -142,7 +152,7 @@ public final class ConfigStore {
             : p.getString(Constants.KEY_SELECTED_PACKAGE, null);
         String desiredComponent = selectionSet ? p.getString(KEY_DESIRED_COMPONENT, null)
             : p.getString(Constants.KEY_SELECTED_COMPONENT, null);
-        boolean remoteOk = putRemote(editor -> {
+        boolean remoteOk = putRemote(context, "reconcile", editor -> {
             if (pendingEnabled) {
                 editor.putBoolean(Constants.KEY_MODULE_ENABLED, desiredEnabled);
             }
@@ -165,12 +175,15 @@ public final class ConfigStore {
             finishSelection(context, desiredPackage, desiredComponent,
                 p.getString(KEY_DESIRED_SOURCE, null), remoteOk);
         }
+        RuntimeDebugStore.append(context, "app",
+            remoteOk ? Constants.EV_CONFIG_RECONCILE_OK : Constants.EV_CONFIG_RECONCILE_FAILED,
+            "config_reconcile", "remote_commit=" + remoteOk);
     }
 
     /** App 诊断页读取：本地期望、远端实际及是否存在同步缺口。 */
     public static Status status(Context context) {
         SharedPreferences p = local(context);
-        SharedPreferences remote = remotePrefs();
+        SharedPreferences remote = remotePrefs(context);
         boolean remoteAvailable = remote != null;
         boolean remoteEnabled = false;
         boolean remoteDetail = false;
@@ -184,6 +197,8 @@ public final class ConfigStore {
                 remoteComponent = remote.getString(Constants.KEY_SELECTED_COMPONENT, null);
             } catch (Throwable ignored) {
                 remoteAvailable = false;
+                RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_FAILED,
+                    "remote_preferences_read", "read failed", ignored);
             }
         }
         boolean syncPending = p.getBoolean(KEY_SYNC_PENDING, false)
@@ -281,14 +296,26 @@ public final class ConfigStore {
         }
     }
 
-    private static SharedPreferences remotePrefs() {
+    private static SharedPreferences remotePrefs(Context context) {
         XposedService xposedService = AssistApp.service();
         if (xposedService == null) {
+            RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_FAILED,
+                "remote_preferences", "service=null");
             return null;
         }
         try {
-            return xposedService.getRemotePreferences(Constants.PREFS_GROUP);
+            SharedPreferences prefs = xposedService.getRemotePreferences(Constants.PREFS_GROUP);
+            if (prefs == null) {
+                RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_FAILED,
+                    "remote_preferences", "getRemotePreferences returned null");
+                return null;
+            }
+            RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_OK,
+                "remote_preferences", "group=" + Constants.PREFS_GROUP);
+            return prefs;
         } catch (Throwable t) {
+            RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_FAILED,
+                "remote_preferences", "getRemotePreferences failed", t);
             return null;
         }
     }
@@ -298,14 +325,35 @@ public final class ConfigStore {
     }
 
     /** commit() 的返回值才是 Remote Preferences 写入成功的闸门。 */
-    private static boolean putRemote(EditorAction action) {
-        SharedPreferences prefs = remotePrefs();
+    private static boolean putRemote(Context context, String operation, EditorAction action) {
+        SharedPreferences prefs = remotePrefs(context);
         if (prefs == null) {
+            RuntimeDebugStore.append(context, "app",
+                "enabled".equals(operation)
+                    ? Constants.EV_REMOTE_PREFS_WRITE_ENABLED_FAILED
+                    : Constants.EV_REMOTE_PREFS_WRITE_FAILED,
+                "remote_preferences_write", "operation=" + operation + ",prefs=null");
             return false;
         }
         try {
-            return action.apply(prefs.edit()).commit();
+            boolean committed = action.apply(prefs.edit()).commit();
+            String event;
+            if ("enabled".equals(operation)) {
+                event = committed ? Constants.EV_REMOTE_PREFS_WRITE_ENABLED_OK
+                    : Constants.EV_REMOTE_PREFS_WRITE_ENABLED_FAILED;
+            } else {
+                event = committed ? Constants.EV_REMOTE_PREFS_WRITE_OK
+                    : Constants.EV_REMOTE_PREFS_WRITE_FAILED;
+            }
+            RuntimeDebugStore.append(context, "app", event, "remote_preferences_write",
+                "operation=" + operation + ",commit=" + committed);
+            return committed;
         } catch (Throwable t) {
+            RuntimeDebugStore.append(context, "app",
+                "enabled".equals(operation)
+                    ? Constants.EV_REMOTE_PREFS_WRITE_ENABLED_FAILED
+                    : Constants.EV_REMOTE_PREFS_WRITE_FAILED,
+                "remote_preferences_write", "operation=" + operation + ",commit_exception", t);
             return false;
         }
     }

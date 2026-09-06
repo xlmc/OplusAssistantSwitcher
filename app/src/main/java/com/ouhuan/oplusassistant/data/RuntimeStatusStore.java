@@ -3,6 +3,7 @@ package com.ouhuan.oplusassistant.data;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.util.Log;
 
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.RuntimeStatusContract;
@@ -18,6 +19,7 @@ import io.github.libxposed.service.XposedService;
  */
 public final class RuntimeStatusStore {
 
+    private static final String TAG = "OplusAssistant";
     private static final String PREFS = "runtime_status";
     private static final String KEY_UPDATED_AT = "updated_at";
     private static final String KEY_FRAMEWORK_CONNECTED = "framework_connected";
@@ -37,6 +39,9 @@ public final class RuntimeStatusStore {
         copyLong(state, editor, RuntimeStatusContract.KEY_MODULE_VERSION_CODE,
             Constants.UNKNOWN_VERSION_CODE);
         copyLong(state, editor, RuntimeStatusContract.KEY_MODULE_LOADED_AT, 0L);
+        copyLong(state, editor, RuntimeStatusContract.KEY_MODULE_UID, -1L);
+        // KEY_PEER_* 由 App Binder 服务根据 Binder.getCallingUid() 写入，
+        // 不接受 system_server 状态包里同名的“对端”字段，避免方向混淆。
         copyString(state, editor, RuntimeStatusContract.KEY_FRAMEWORK_NAME);
         copyString(state, editor, RuntimeStatusContract.KEY_FRAMEWORK_VERSION);
         copyLong(state, editor, RuntimeStatusContract.KEY_FRAMEWORK_VERSION_CODE,
@@ -84,6 +89,9 @@ public final class RuntimeStatusStore {
                 .putLong(RuntimeStatusContract.KEY_FRAMEWORK_TARGET_VERSION_CODE,
                     Constants.UNKNOWN_VERSION_CODE)
                 .putLong(RuntimeStatusContract.KEY_FRAMEWORK_TARGET_PID, 0L)
+                .putLong(RuntimeStatusContract.KEY_PEER_UID, -1L)
+                .putString(RuntimeStatusContract.KEY_PEER_PROCESS, "")
+                .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
                 .apply();
             return;
         }
@@ -132,8 +140,24 @@ public final class RuntimeStatusStore {
         } catch (Throwable t) {
             editor.putString(RuntimeStatusContract.KEY_FRAMEWORK_TARGET_STATE,
                 "QUERY_FAILED:" + t.getClass().getSimpleName());
+            RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_SERVICE_BIND,
+                "framework_target_query", "running target query failed", t);
+            Log.w(TAG, "Xposed running target query failed: " + t.getClass().getName()
+                + ": " + t.getMessage(), t);
         }
         editor.putLong(KEY_UPDATED_AT, System.currentTimeMillis()).apply();
+    }
+
+    /** 记录 App Binder 服务看到的可信 system_server 调用方身份。 */
+    public static void markPeer(Context context, int uid, String process) {
+        if (context == null) {
+            return;
+        }
+        prefs(context).edit()
+            .putLong(RuntimeStatusContract.KEY_PEER_UID, uid)
+            .putString(RuntimeStatusContract.KEY_PEER_PROCESS, safe(process))
+            .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
+            .apply();
     }
 
     public static void applyEvent(Context context, Bundle event) {
@@ -146,6 +170,27 @@ public final class RuntimeStatusStore {
         copyLong(event, editor, RuntimeStatusContract.KEY_LAST_EVENT_AT,
             Constants.FIELD_TIMESTAMP, 0L);
         editor.putLong(KEY_UPDATED_AT, System.currentTimeMillis()).apply();
+        String eventName = stringValue(event, Constants.FIELD_EVENT,
+            RuntimeStatusContract.KEY_LAST_EVENT);
+        String stage = stringValue(event, Constants.FIELD_HOOK_STATUS,
+            RuntimeStatusContract.KEY_HOOK_STAGE);
+        String summary = stringValue(event, Constants.FIELD_EXCEPTION_SUMMARY,
+            Constants.FIELD_RESULT);
+        String exception = stringValue(event, Constants.FIELD_EXCEPTION_TYPE, "");
+        RuntimeDebugStore.append(context, "system_server", eventName, stage, summary, exception);
+    }
+
+    /** 保存 App → system_server 的最近一次 Binder ping 结果。 */
+    public static void markPing(Context context, String status, String summary) {
+        if (context == null) {
+            return;
+        }
+        prefs(context).edit()
+            .putString(RuntimeStatusContract.KEY_PING_STATUS, safe(status))
+            .putLong(RuntimeStatusContract.KEY_PING_AT, System.currentTimeMillis())
+            .putString(RuntimeStatusContract.KEY_PING_SUMMARY, safe(summary))
+            .putLong(KEY_UPDATED_AT, System.currentTimeMillis())
+            .apply();
     }
 
     public static Snapshot current(Context context) {
@@ -158,6 +203,9 @@ public final class RuntimeStatusStore {
             p.getLong(RuntimeStatusContract.KEY_MODULE_VERSION_CODE,
                 Constants.UNKNOWN_VERSION_CODE),
             p.getLong(RuntimeStatusContract.KEY_MODULE_LOADED_AT, 0L),
+            p.getLong(RuntimeStatusContract.KEY_MODULE_UID, -1L),
+            p.getLong(RuntimeStatusContract.KEY_PEER_UID, -1L),
+            p.getString(RuntimeStatusContract.KEY_PEER_PROCESS, ""),
             p.getString(RuntimeStatusContract.KEY_FRAMEWORK_NAME, ""),
             p.getString(RuntimeStatusContract.KEY_FRAMEWORK_VERSION, ""),
             p.getLong(RuntimeStatusContract.KEY_FRAMEWORK_VERSION_CODE,
@@ -185,6 +233,9 @@ public final class RuntimeStatusStore {
             p.getString(RuntimeStatusContract.KEY_CONFIG_SELECTED_PACKAGE, ""),
             p.getString(RuntimeStatusContract.KEY_CONFIG_SELECTED_COMPONENT, ""),
             p.getLong(RuntimeStatusContract.KEY_CONFIG_UPDATED_AT, 0L),
+            p.getString(RuntimeStatusContract.KEY_PING_STATUS, "UNKNOWN"),
+            p.getLong(RuntimeStatusContract.KEY_PING_AT, 0L),
+            p.getString(RuntimeStatusContract.KEY_PING_SUMMARY, ""),
             p.getLong(KEY_UPDATED_AT, 0L));
     }
 
@@ -234,6 +285,14 @@ public final class RuntimeStatusStore {
         }
     }
 
+    private static String stringValue(Bundle source, String primaryKey, String fallbackKey) {
+        String value = source.getString(primaryKey, null);
+        if (value == null && fallbackKey != null) {
+            value = source.getString(fallbackKey, null);
+        }
+        return safe(value);
+    }
+
     private static String safe(String value) {
         return value == null ? "" : value;
     }
@@ -245,6 +304,9 @@ public final class RuntimeStatusStore {
         public final String moduleVersionName;
         public final long moduleVersionCode;
         public final long moduleLoadedAt;
+        public final long moduleUid;
+        public final long peerUid;
+        public final String peerProcess;
         public final String frameworkName;
         public final String frameworkVersion;
         public final long frameworkVersionCode;
@@ -270,10 +332,14 @@ public final class RuntimeStatusStore {
         public final String configSelectedPackage;
         public final String configSelectedComponent;
         public final long configUpdatedAt;
+        public final String pingStatus;
+        public final long pingAt;
+        public final String pingSummary;
         public final long updatedAt;
 
         Snapshot(boolean frameworkConnected, String frameworkScope, String processName,
                  String moduleVersionName, long moduleVersionCode, long moduleLoadedAt,
+                 long moduleUid, long peerUid, String peerProcess,
                  String frameworkName, String frameworkVersion, long frameworkVersionCode,
                  long frameworkApi, long frameworkProperties, String targetProcess,
                  String targetState, long targetLoadedVersionCode, long targetPid,
@@ -281,13 +347,17 @@ public final class RuntimeStatusStore {
                  String channelState, String lastEvent, long lastEventAt, long eventSequence,
                  long powerAssistMatchedAt, String powerAssistStatus, boolean configKnown,
                  boolean configEnabled, boolean configDetail, String configSelectedPackage,
-                 String configSelectedComponent, long configUpdatedAt, long updatedAt) {
+                 String configSelectedComponent, long configUpdatedAt, String pingStatus,
+                 long pingAt, String pingSummary, long updatedAt) {
             this.frameworkConnected = frameworkConnected;
             this.frameworkScope = frameworkScope;
             this.processName = processName;
             this.moduleVersionName = moduleVersionName;
             this.moduleVersionCode = moduleVersionCode;
             this.moduleLoadedAt = moduleLoadedAt;
+            this.moduleUid = moduleUid;
+            this.peerUid = peerUid;
+            this.peerProcess = peerProcess;
             this.frameworkName = frameworkName;
             this.frameworkVersion = frameworkVersion;
             this.frameworkVersionCode = frameworkVersionCode;
@@ -313,6 +383,9 @@ public final class RuntimeStatusStore {
             this.configSelectedPackage = configSelectedPackage;
             this.configSelectedComponent = configSelectedComponent;
             this.configUpdatedAt = configUpdatedAt;
+            this.pingStatus = pingStatus;
+            this.pingAt = pingAt;
+            this.pingSummary = pingSummary;
             this.updatedAt = updatedAt;
         }
     }

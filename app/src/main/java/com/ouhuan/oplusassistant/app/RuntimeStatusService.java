@@ -8,12 +8,14 @@ import android.os.IBinder;
 import android.os.Parcel;
 import android.os.Process;
 import android.os.RemoteException;
+import android.util.Log;
 
 import com.ouhuan.oplusassistant.data.AppExecutors;
 import com.ouhuan.oplusassistant.data.AssistantStateStore;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
 import com.ouhuan.oplusassistant.data.LogEntity;
+import com.ouhuan.oplusassistant.data.RuntimeDebugStore;
 import com.ouhuan.oplusassistant.data.RuntimeStatusStore;
 import com.ouhuan.oplusassistant.shared.Constants;
 import com.ouhuan.oplusassistant.shared.RuntimeStatusContract;
@@ -30,23 +32,32 @@ import java.util.Map;
  */
 public final class RuntimeStatusService extends Service {
 
+    private static final String TAG = "OplusAssistant";
     private static volatile IBinder systemServerCallback;
+    private static volatile String lastPingFailure = "";
 
     private final IBinder binder = new StatusBinder();
 
     @Override
     public void onCreate() {
         super.onCreate();
+        RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_BIND,
+            "runtime_service", "onCreate");
     }
 
     @Override
     public void onDestroy() {
         systemServerCallback = null;
+        lastPingFailure = "service destroyed";
+        RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_DIED,
+            "runtime_service", "onDestroy");
         super.onDestroy();
     }
 
     @Override
     public IBinder onBind(Intent intent) {
+        RuntimeDebugStore.append(this, "app", Constants.EV_XPOSED_SERVICE_BIND,
+            "runtime_service", "onBind action=" + (intent == null ? "null" : intent.getAction()));
         return binder;
     }
 
@@ -54,25 +65,44 @@ public final class RuntimeStatusService extends Service {
     public static Bundle pingSystemServer() {
         IBinder callback = systemServerCallback;
         if (callback == null || !callback.isBinderAlive()) {
+            lastPingFailure = "callback unavailable";
+            Log.w(TAG, "Runtime Binder ping skipped: callback is unavailable");
             return null;
         }
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
         try {
             data.writeInterfaceToken(RuntimeStatusContract.CALLBACK_DESCRIPTOR);
-            callback.transact(RuntimeStatusContract.TRANSACTION_PING, data, reply, 0);
+            boolean delivered = callback.transact(RuntimeStatusContract.TRANSACTION_PING,
+                data, reply, 0);
+            if (!delivered) {
+                lastPingFailure = "transact returned false";
+                Log.w(TAG, "Runtime Binder ping transact returned false");
+                return null;
+            }
             reply.readException();
             Bundle result = reply.readBundle(RuntimeStatusService.class.getClassLoader());
             if (result != null) {
                 result.setClassLoader(RuntimeStatusService.class.getClassLoader());
+            } else {
+                lastPingFailure = "empty pong bundle";
+                return null;
             }
+            lastPingFailure = "";
             return result;
         } catch (Throwable ignored) {
+            lastPingFailure = ignored.getClass().getName() + ": " + ignored.getMessage();
+            Log.w(TAG, "Runtime Binder ping failed: " + ignored.getClass().getName() + ": "
+                + ignored.getMessage(), ignored);
             return null;
         } finally {
             data.recycle();
             reply.recycle();
         }
+    }
+
+    public static String lastPingFailure() {
+        return lastPingFailure == null ? "" : lastPingFailure;
     }
 
     /** 将一次 ping 结果按与推送相同的路径持久化。 */
@@ -94,7 +124,10 @@ public final class RuntimeStatusService extends Service {
                 AssistantStateStore.apply(context, toMap(state), candidates);
             }
         } catch (Throwable ignored) {
-            // 诊断数据失败不影响 App 或 system_server。
+            RuntimeDebugStore.append(context, "app", Constants.EV_STATE_CHANNEL_FAILED,
+                "state_persist", "state persistence failed", ignored);
+            Log.w(TAG, "Runtime state persistence failed: " + ignored.getClass().getName()
+                + ": " + ignored.getMessage(), ignored);
         }
     }
 
@@ -108,7 +141,11 @@ public final class RuntimeStatusService extends Service {
                 HookStateStore.update(context, entity);
             }
         } catch (Throwable ignored) {
-            // 诊断落库失败不反向影响 system_server 热路径。
+            String eventName = event == null ? "" : event.getString(Constants.FIELD_EVENT, "");
+            RuntimeDebugStore.append(context, "app", Constants.EV_STATE_CHANNEL_FAILED,
+                "event_persist", "event=" + eventName + " persistence failed", ignored);
+            Log.w(TAG, "Runtime event persistence failed: " + ignored.getClass().getName()
+                + ": " + ignored.getMessage(), ignored);
         }
     }
 
@@ -151,6 +188,11 @@ public final class RuntimeStatusService extends Service {
             switch (code) {
                 case RuntimeStatusContract.TRANSACTION_REGISTER_CALLBACK:
                     systemServerCallback = data.readStrongBinder();
+                    RuntimeStatusStore.markPeer(RuntimeStatusService.this, Binder.getCallingUid(),
+                        "system_server");
+                    RuntimeDebugStore.append(RuntimeStatusService.this, "app",
+                        Constants.EV_RUNTIME_BINDER_BIND_OK, "runtime_service",
+                        "system_server callback registered uid=" + Binder.getCallingUid());
                     if (reply != null) {
                         reply.writeNoException();
                     }
@@ -176,6 +218,10 @@ public final class RuntimeStatusService extends Service {
 
         private void enforceSystemCaller() {
             if (Binder.getCallingUid() != Process.SYSTEM_UID) {
+                RuntimeDebugStore.append(RuntimeStatusService.this, "app",
+                    Constants.EV_RUNTIME_BINDER_BIND_FAILED, "runtime_service",
+                    "rejected uid=" + Binder.getCallingUid());
+                Log.w(TAG, "Rejected RuntimeStatusService caller uid=" + Binder.getCallingUid());
                 throw new SecurityException("RuntimeStatusService accepts system uid only");
             }
         }

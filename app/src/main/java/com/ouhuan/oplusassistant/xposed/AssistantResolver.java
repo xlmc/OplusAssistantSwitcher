@@ -37,6 +37,20 @@ import java.util.Set;
  */
 public final class AssistantResolver {
 
+    public interface DiagnosticSink {
+        void onFailure(String stage, Throwable error);
+    }
+
+    private final DiagnosticSink diagnosticSink;
+
+    public AssistantResolver() {
+        this(null);
+    }
+
+    public AssistantResolver(DiagnosticSink diagnosticSink) {
+        this.diagnosticSink = diagnosticSink;
+    }
+
     /** 解析结果：ok 时携带可启动目标，否则携带结构化失败。 */
     public static final class ResolveOutcome {
         public final LaunchResult result;
@@ -170,6 +184,7 @@ public final class AssistantResolver {
             }
             return fallback;
         } catch (Throwable t) {
+            reportFailure("current_oem_voice_service_query", t);
             return null;
         }
     }
@@ -210,6 +225,7 @@ public final class AssistantResolver {
                 }
             }
         } catch (Throwable ignored) {
+            reportFailure("candidate_vis_query", ignored);
         }
 
         SystemAssistantState system = readSystemDefault(context);
@@ -294,6 +310,7 @@ public final class AssistantResolver {
             return (info.flags & ApplicationInfo.FLAG_SYSTEM) != 0
                 && (info.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
         } catch (Throwable t) {
+            reportFailure("vendor_original_target_query", t);
             return false;
         }
     }
@@ -303,6 +320,7 @@ public final class AssistantResolver {
             ApplicationInfo info = pm.getApplicationInfo(pkg, 0);
             return info.enabled;
         } catch (Throwable t) {
+            reportFailure("application_enabled_query", t);
             return false;
         }
     }
@@ -324,6 +342,7 @@ public final class AssistantResolver {
                     label == null ? "" : String.valueOf(label), method);
             }
         } catch (Throwable ignored) {
+            reportFailure("assistant_entry_query", ignored);
         }
         return null;
     }
@@ -347,6 +366,7 @@ public final class AssistantResolver {
                     android.os.Process.myUserHandle());
             }
         } catch (Throwable ignored) {
+            reportFailure("role_holder_query", ignored);
             // 部分 ROM 限制该查询；退化到 VIS 交叉验证
         }
         String vis = readSecure(context, "voice_interaction_service");
@@ -400,6 +420,10 @@ public final class AssistantResolver {
         } catch (PackageManager.NameNotFoundException e) {
             return ResolveOutcome.failure(LaunchResult.TARGET_NOT_FOUND,
                 ErrorCodes.ASSISTANT_NOT_INSTALLED, null);
+        } catch (Throwable t) {
+            reportFailure("resolve_application_query", t);
+            return ResolveOutcome.failure(LaunchResult.RESOLVE_FAILED,
+                ErrorCodes.RESOLVE_FAILED, t.getClass().getSimpleName() + ": " + t.getMessage());
         }
         if (!appInfo.enabled) {
             return ResolveOutcome.failure(LaunchResult.TARGET_DISABLED,
@@ -467,6 +491,7 @@ public final class AssistantResolver {
             intent.setPackage(pkg);
             return pm.queryIntentActivities(intent, 0);
         } catch (Throwable t) {
+            reportFailure("launchable_activity_query", t);
             return Collections.emptyList();
         }
     }
@@ -487,6 +512,7 @@ public final class AssistantResolver {
                 }
             }
         } catch (Throwable ignored) {
+            reportFailure("voice_interaction_service_query", ignored);
         }
         return false;
     }
@@ -500,6 +526,7 @@ public final class AssistantResolver {
             pm.getActivityInfo(cn, 0);
             return true;
         } catch (Throwable t) {
+            reportFailure("activity_resolvable_query", t);
             return false;
         }
     }
@@ -534,6 +561,7 @@ public final class AssistantResolver {
             String value = Settings.Secure.getString(context.getContentResolver(), key);
             return value == null ? "" : value.trim();
         } catch (Throwable t) {
+            reportFailure("secure_setting_query", t);
             return "";
         }
     }
@@ -550,6 +578,7 @@ public final class AssistantResolver {
                 return String.valueOf(label);
             }
         } catch (Throwable ignored) {
+            reportFailure("activity_label_query", ignored);
         }
         try {
             CharSequence label = pm.getServiceInfo(cn, 0).loadLabel(pm);
@@ -557,6 +586,7 @@ public final class AssistantResolver {
                 return String.valueOf(label);
             }
         } catch (Throwable ignored) {
+            reportFailure("service_label_query", ignored);
         }
         return appLabel(pm, cn.getPackageName());
     }
@@ -567,6 +597,7 @@ public final class AssistantResolver {
             CharSequence label = pm.getApplicationLabel(info);
             return label == null ? "" : String.valueOf(label);
         } catch (Throwable t) {
+            reportFailure("application_label_query", t);
             return "";
         }
     }
@@ -575,5 +606,19 @@ public final class AssistantResolver {
         PackageManager pm = context.getPackageManager();
         String label = appLabel(pm, packageName);
         return label.isEmpty() ? packageName : label;
+    }
+
+    private void reportFailure(String stage, Throwable error) {
+        DiagnosticSink sink = diagnosticSink;
+        if (sink == null) {
+            return;
+        }
+        try {
+            sink.onFailure(stage, error);
+        } catch (Throwable callbackFailure) {
+            android.util.Log.w(Constants.MODULE_PACKAGE,
+                "resolver diagnostic callback failed: " + callbackFailure.getClass().getName()
+                    + ": " + callbackFailure.getMessage(), callbackFailure);
+        }
     }
 }

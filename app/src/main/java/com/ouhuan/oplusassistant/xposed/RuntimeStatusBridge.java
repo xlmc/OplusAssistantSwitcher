@@ -30,7 +30,12 @@ public final class RuntimeStatusBridge {
 
     private static final int PENDING_LIMIT = 64;
 
+    public interface LifecycleSink {
+        void onEvent(String event, String summary);
+    }
+
     private final XposedInterface xposed;
+    private final LifecycleSink lifecycleSink;
     private final Object lock = new Object();
     private final Bundle state = new Bundle();
     private final ArrayDeque<Bundle> pendingEvents = new ArrayDeque<>();
@@ -57,12 +62,19 @@ public final class RuntimeStatusBridge {
                 state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
                     RuntimeStatusContract.CHANNEL_DISCONNECTED);
             }
-            log("runtime service disconnected: " + name);
+            String summary = "runtime service disconnected: " + name;
+            log(summary);
+            emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_FAILED, summary);
         }
     };
 
     public RuntimeStatusBridge(XposedInterface xposed) {
+        this(xposed, null);
+    }
+
+    public RuntimeStatusBridge(XposedInterface xposed, LifecycleSink lifecycleSink) {
         this.xposed = xposed;
+        this.lifecycleSink = lifecycleSink;
         this.moduleLoadedAt = System.currentTimeMillis();
         int uid = -1;
         try {
@@ -70,12 +82,16 @@ public final class RuntimeStatusBridge {
                 uid = xposed.getModuleApplicationInfo().uid;
             }
         } catch (Throwable ignored) {
+            log("read module uid failed", ignored);
         }
         this.moduleUid = uid;
 
         state.putInt(RuntimeStatusContract.KEY_PROTOCOL_VERSION,
             RuntimeStatusContract.PROTOCOL_VERSION);
         state.putString(RuntimeStatusContract.KEY_PROCESS_NAME, "system_server");
+        state.putLong(RuntimeStatusContract.KEY_MODULE_UID, uid);
+        state.putLong(RuntimeStatusContract.KEY_PEER_UID, Process.SYSTEM_UID);
+        state.putString(RuntimeStatusContract.KEY_PEER_PROCESS, "system_server");
         state.putString(RuntimeStatusContract.KEY_MODULE_VERSION_NAME,
             ModuleBuildInfo.VERSION_NAME);
         state.putLong(RuntimeStatusContract.KEY_MODULE_VERSION_CODE,
@@ -107,6 +123,8 @@ public final class RuntimeStatusBridge {
             }
             bindAttempted = true;
         }
+        emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_BEGIN,
+            "service=" + RuntimeStatusContract.SERVICE_CLASS + ",moduleUid=" + moduleUid);
         try {
             Intent intent = new Intent();
             intent.setComponent(new ComponentName(Constants.MODULE_PACKAGE,
@@ -119,8 +137,7 @@ public final class RuntimeStatusBridge {
                 markChannelFailed("bindServiceAsUser returned false");
             }
         } catch (Throwable t) {
-            markChannelFailed("bindServiceAsUser: " + t.getClass().getSimpleName()
-                + ": " + t.getMessage());
+            markChannelFailed("bindServiceAsUser", t);
         }
     }
 
@@ -241,9 +258,13 @@ public final class RuntimeStatusBridge {
         synchronized (lock) {
             appService = service;
             fallback = false;
+            state.putLong(RuntimeStatusContract.KEY_PEER_UID, moduleUid);
+            state.putString(RuntimeStatusContract.KEY_PEER_PROCESS, "module_app");
             state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
                 RuntimeStatusContract.CHANNEL_READY);
         }
+        emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_OK,
+            "service_connected,moduleUid=" + moduleUid + ",peer=module_app");
         LogEvent ready = syntheticHookEvent(Constants.EV_STATE_CHANNEL_READY,
             "Binder service connected");
         publishEvent(ready);
@@ -259,12 +280,13 @@ public final class RuntimeStatusBridge {
             data.writeStrongBinder(callback);
             if (!service.transact(RuntimeStatusContract.TRANSACTION_REGISTER_CALLBACK,
                 data, reply, 0)) {
+                log("register callback transact returned false");
                 return false;
             }
             reply.readException();
             return true;
         } catch (Throwable t) {
-            log("register callback failed: " + t);
+            log("register callback failed", t);
             return false;
         } finally {
             data.recycle();
@@ -300,8 +322,12 @@ public final class RuntimeStatusBridge {
 
     private SendResult send(int transaction, Bundle payload) {
         IBinder service = appService;
-        if (service == null || !service.isBinderAlive()) {
+        if (service == null) {
             return SendResult.NOT_CONNECTED;
+        }
+        if (!service.isBinderAlive()) {
+            markChannelFailed("app service binder is not alive");
+            return SendResult.FAILED;
         }
         Parcel data = Parcel.obtain();
         try {
@@ -313,8 +339,7 @@ public final class RuntimeStatusBridge {
             }
             return SendResult.SENT;
         } catch (Throwable t) {
-            markChannelFailed("transaction " + transaction + ": "
-                + t.getClass().getSimpleName() + ": " + t.getMessage());
+            markChannelFailed("transaction " + transaction, t);
             return SendResult.FAILED;
         } finally {
             data.recycle();
@@ -322,13 +347,25 @@ public final class RuntimeStatusBridge {
     }
 
     private void markChannelFailed(String summary) {
+        markChannelFailed(summary, null);
+    }
+
+    private void markChannelFailed(String summary, Throwable error) {
+        boolean shouldEmit;
         synchronized (lock) {
+            shouldEmit = !fallback
+                || !RuntimeStatusContract.CHANNEL_FAILED.equals(
+                    state.getString(RuntimeStatusContract.KEY_CHANNEL_STATE, ""));
             appService = null;
             fallback = true;
             state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
                 RuntimeStatusContract.CHANNEL_FAILED);
         }
-        log("runtime channel failed: " + summary);
+        String detail = appendThrowable(summary, error);
+        log("runtime channel failed: " + detail);
+        if (shouldEmit) {
+            emitLifecycle(Constants.EV_RUNTIME_BINDER_BIND_FAILED, detail);
+        }
     }
 
     private void recordEventLocked(LogEvent event) {
@@ -350,6 +387,10 @@ public final class RuntimeStatusBridge {
             case Constants.EV_SYSTEM_SERVER_STARTING:
                 state.putString(RuntimeStatusContract.KEY_HOOK_STAGE, "SYSTEM_SERVER_STARTING");
                 break;
+            case Constants.EV_AMS_SYSTEM_READY:
+            case Constants.EV_SYSTEM_SERVER_READY:
+                state.putString(RuntimeStatusContract.KEY_HOOK_STAGE, "AMS_SYSTEM_READY");
+                break;
             case Constants.EV_SYSTEM_CONTEXT_READY:
                 state.putString(RuntimeStatusContract.KEY_HOOK_STAGE, "SYSTEM_CONTEXT_READY");
                 state.putString(RuntimeStatusContract.KEY_CONTEXT_STATE, "READY");
@@ -369,6 +410,9 @@ public final class RuntimeStatusBridge {
             case Constants.EV_HOOK_METHOD_NOT_FOUND:
                 state.putString(RuntimeStatusContract.KEY_HOOK_STAGE, "HOOK_METHOD_NOT_FOUND");
                 break;
+            case Constants.EV_HOOK_TARGET_NOT_FOUND:
+                state.putString(RuntimeStatusContract.KEY_HOOK_STAGE, "HOOK_TARGET_NOT_FOUND");
+                break;
             case Constants.EV_HOOK_INSTALLED:
                 state.putString(RuntimeStatusContract.KEY_HOOK_STAGE, "HOOK_INSTALLED");
                 break;
@@ -387,7 +431,27 @@ public final class RuntimeStatusBridge {
                 state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
                     RuntimeStatusContract.CHANNEL_FAILED);
                 break;
+            case Constants.EV_RUNTIME_BINDER_BIND_BEGIN:
+                state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
+                    RuntimeStatusContract.CHANNEL_WAITING);
+                break;
+            case Constants.EV_RUNTIME_BINDER_BIND_OK:
+                state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
+                    RuntimeStatusContract.CHANNEL_READY);
+                break;
+            case Constants.EV_RUNTIME_BINDER_BIND_FAILED:
+                state.putString(RuntimeStatusContract.KEY_CHANNEL_STATE,
+                    RuntimeStatusContract.CHANNEL_FAILED);
+                break;
+            case Constants.EV_CONFIG_READ_FAILED:
+                state.putBoolean(RuntimeStatusContract.KEY_CONFIG_KNOWN, false);
+                break;
+            case Constants.EV_RESOLVER_QUERY_FAILED:
+                state.putString(RuntimeStatusContract.KEY_HOOK_STAGE,
+                    "RESOLVER_QUERY_FAILED");
+                break;
             case Constants.EV_POWER_ASSIST_EVENT_MATCHED:
+            case Constants.EV_POWER_ASSIST_0X3F3_MATCHED:
                 state.putLong(RuntimeStatusContract.KEY_POWER_ASSIST_MATCHED_AT,
                     parseLong(event.timestamp));
                 state.putString(RuntimeStatusContract.KEY_POWER_ASSIST_STATUS,
@@ -430,25 +494,30 @@ public final class RuntimeStatusBridge {
             state.putString(RuntimeStatusContract.KEY_FRAMEWORK_NAME,
                 safe(xposed.getFrameworkName()));
         } catch (Throwable ignored) {
+            log("read framework name failed", ignored);
         }
         try {
             state.putString(RuntimeStatusContract.KEY_FRAMEWORK_VERSION,
                 safe(xposed.getFrameworkVersion()));
         } catch (Throwable ignored) {
+            log("read framework version failed", ignored);
         }
         try {
             state.putLong(RuntimeStatusContract.KEY_FRAMEWORK_VERSION_CODE,
                 xposed.getFrameworkVersionCode());
         } catch (Throwable ignored) {
+            log("read framework version code failed", ignored);
         }
         try {
             state.putLong(RuntimeStatusContract.KEY_FRAMEWORK_API, xposed.getApiVersion());
         } catch (Throwable ignored) {
+            log("read framework api failed", ignored);
         }
         try {
             state.putLong(RuntimeStatusContract.KEY_FRAMEWORK_PROPERTIES,
                 xposed.getFrameworkProperties());
         } catch (Throwable ignored) {
+            log("read framework properties failed", ignored);
         }
     }
 
@@ -467,7 +536,10 @@ public final class RuntimeStatusBridge {
                 return true;
             }
             data.enforceInterface(RuntimeStatusContract.CALLBACK_DESCRIPTOR);
-            if (Binder.getCallingUid() != moduleUid) {
+            int callingUid = Binder.getCallingUid();
+            if (moduleUid <= 0 || callingUid != moduleUid) {
+                log("runtime ping rejected: senderUid=" + callingUid
+                    + ",expectedModuleUid=" + moduleUid);
                 throw new SecurityException("runtime ping accepts module uid only");
             }
             if (code == RuntimeStatusContract.TRANSACTION_PING) {
@@ -504,6 +576,8 @@ public final class RuntimeStatusBridge {
             || Constants.EV_SYSTEM_SERVER_STARTING.equals(event)
             || Constants.EV_SYSTEM_CONTEXT_READY.equals(event)
             || Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE.equals(event)
+            || Constants.EV_AMS_SYSTEM_READY.equals(event)
+            || Constants.EV_SYSTEM_SERVER_READY.equals(event)
             || Constants.EV_HOOK_CLASS_FOUND.equals(event)
             || Constants.EV_HOOK_METHOD_FOUND.equals(event)
             || Constants.EV_HOOK_CLASS_NOT_FOUND.equals(event)
@@ -511,15 +585,54 @@ public final class RuntimeStatusBridge {
             || Constants.EV_HOOK_INSTALLED.equals(event)
             || Constants.EV_HOOK_FAILED.equals(event)
             || Constants.EV_HOOK_INSTALL_FAILED.equals(event)
-            || Constants.EV_ROM_UNSUPPORTED.equals(event);
+            || Constants.EV_HOOK_TARGET_NOT_FOUND.equals(event)
+            || Constants.EV_ROM_UNSUPPORTED.equals(event)
+            || Constants.EV_RUNTIME_BINDER_BIND_BEGIN.equals(event)
+            || Constants.EV_RUNTIME_BINDER_BIND_OK.equals(event)
+            || Constants.EV_RUNTIME_BINDER_BIND_FAILED.equals(event)
+            || Constants.EV_CONFIG_READ.equals(event)
+            || Constants.EV_CONFIG_READ_FAILED.equals(event)
+            || Constants.EV_RESOLVER_QUERY_FAILED.equals(event);
+    }
+
+    private void emitLifecycle(String event, String summary) {
+        LifecycleSink sink = lifecycleSink;
+        if (sink == null) {
+            return;
+        }
+        try {
+            sink.onEvent(event, summary);
+        } catch (Throwable t) {
+            log("lifecycle sink failed for " + event, t);
+        }
     }
 
     private void log(String message) {
+        log(message, null);
+    }
+
+    private void log(String message, Throwable error) {
         try {
             if (xposed != null) {
-                xposed.log(android.util.Log.INFO, Constants.MODULE_PACKAGE, message);
+                xposed.log(error == null ? android.util.Log.INFO : android.util.Log.WARN,
+                    Constants.MODULE_PACKAGE,
+                    error == null ? message : message + ": " + appendThrowable("", error));
+                return;
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable loggingFailure) {
+            android.util.Log.w(Constants.MODULE_PACKAGE,
+                message + " (Xposed log failed: " + loggingFailure.getClass().getName()
+                    + ": " + loggingFailure.getMessage() + ")", error);
         }
+        android.util.Log.w(Constants.MODULE_PACKAGE,
+            error == null ? message : message + ": " + appendThrowable("", error), error);
+    }
+
+    private static String appendThrowable(String summary, Throwable error) {
+        if (error == null) {
+            return summary;
+        }
+        String suffix = error.getClass().getName() + ": " + error.getMessage();
+        return summary == null || summary.isEmpty() ? suffix : summary + "; " + suffix;
     }
 }

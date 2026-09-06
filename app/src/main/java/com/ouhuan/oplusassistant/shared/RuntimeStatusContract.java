@@ -52,6 +52,9 @@ public final class RuntimeStatusContract {
     public static final String KEY_HOOK_STATUS = "runtime_hook_status";
     public static final String KEY_CONTEXT_STATE = "runtime_context_state";
     public static final String KEY_CHANNEL_STATE = "runtime_channel_state";
+    public static final String KEY_MODULE_UID = "runtime_module_uid";
+    public static final String KEY_PEER_UID = "runtime_peer_uid";
+    public static final String KEY_PEER_PROCESS = "runtime_peer_process";
     public static final String KEY_LAST_EVENT = "runtime_last_event";
     public static final String KEY_LAST_EVENT_AT = "runtime_last_event_at";
     public static final String KEY_EVENT_SEQUENCE = "runtime_event_sequence";
@@ -73,6 +76,9 @@ public final class RuntimeStatusContract {
     public static final String KEY_CONFIG_SELECTED_PACKAGE = "runtime_config_selected_package";
     public static final String KEY_CONFIG_SELECTED_COMPONENT = "runtime_config_selected_component";
     public static final String KEY_CONFIG_UPDATED_AT = "runtime_config_updated_at";
+    public static final String KEY_PING_STATUS = "runtime_ping_status";
+    public static final String KEY_PING_AT = "runtime_ping_at";
+    public static final String KEY_PING_SUMMARY = "runtime_ping_summary";
 
     private static final String PREFIX = "runtime_";
 

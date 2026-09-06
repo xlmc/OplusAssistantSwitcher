@@ -114,7 +114,10 @@ public final class LogEvent implements Serializable {
                 || Constants.EV_HOOK_CLASS_NOT_FOUND.equals(event)
                 || Constants.EV_HOOK_METHOD_NOT_FOUND.equals(event)
                 || Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE.equals(event)
-                || Constants.EV_STATE_CHANNEL_FAILED.equals(event);
+                || Constants.EV_STATE_CHANNEL_FAILED.equals(event)
+                || Constants.EV_RUNTIME_BINDER_BIND_FAILED.equals(event)
+                || Constants.EV_CONFIG_READ_FAILED.equals(event)
+                || Constants.EV_RESOLVER_QUERY_FAILED.equals(event);
         }
         return !LaunchResult.SUCCESS.name().equals(result);
     }

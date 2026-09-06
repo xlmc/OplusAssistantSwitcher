@@ -3,9 +3,12 @@ package com.ouhuan.oplusassistant.app;
 import android.app.Application;
 import android.content.Context;
 import android.os.Bundle;
+import android.util.Log;
 
 import com.ouhuan.oplusassistant.data.AppExecutors;
+import com.ouhuan.oplusassistant.data.RuntimeDebugStore;
 import com.ouhuan.oplusassistant.data.RuntimeStatusStore;
+import com.ouhuan.oplusassistant.shared.Constants;
 
 import io.github.libxposed.service.XposedService;
 import io.github.libxposed.service.XposedServiceHelper;
@@ -16,6 +19,7 @@ import io.github.libxposed.service.XposedServiceHelper;
  */
 public class AssistApp extends Application implements XposedServiceHelper.OnServiceListener {
 
+    private static final String TAG = "OplusAssistant";
     private static volatile XposedService service;
 
     public static XposedService service() {
@@ -25,10 +29,22 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
     @Override
     public void onCreate() {
         super.onCreate();
+        Context context = getApplicationContext();
+        RuntimeDebugStore.append(context, "app", Constants.EV_APP_ON_CREATE, "application",
+            "pid=" + android.os.Process.myPid());
+        RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_LISTENER_REGISTER_BEGIN,
+            "xposed_service", "registerListener");
         try {
             XposedServiceHelper.registerListener(this);
+            RuntimeDebugStore.append(context, "app",
+                Constants.EV_XPOSED_LISTENER_REGISTER_OK, "xposed_service",
+                "registerListener returned");
         } catch (Throwable ignored) {
-            // LSPosed 未安装或版本过旧时保持未连接状态
+            RuntimeDebugStore.append(context, "app",
+                Constants.EV_XPOSED_LISTENER_REGISTER_FAILED, "xposed_service",
+                "registerListener failed", ignored);
+            Log.w(TAG, "XposedService listener registration failed: "
+                + ignored.getClass().getName() + ": " + ignored.getMessage(), ignored);
         }
     }
 
@@ -36,6 +52,8 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
     public void onServiceBind(XposedService bound) {
         service = bound;
         Context context = getApplicationContext();
+        RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_SERVICE_BIND,
+            "xposed_service", "service=" + (bound == null ? "null" : bound.getClass().getName()));
         AppExecutors.io().execute(() -> {
             ConfigStore.reconcile(context);
             refreshRuntime(context);
@@ -50,6 +68,8 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
         }
         if (wasCurrent) {
             Context context = getApplicationContext();
+            RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_SERVICE_DIED,
+                "xposed_service", "service_died");
             AppExecutors.io().execute(() -> RuntimeStatusStore.updateFramework(context, null));
         }
     }
@@ -61,9 +81,23 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
         }
         XposedService bound = service;
         RuntimeStatusStore.updateFramework(context, bound);
+        RuntimeDebugStore.append(context, "app", Constants.EV_RUNTIME_BINDER_PING_BEGIN,
+            "runtime_ping", "callback=" + (bound == null ? "service_unbound" : "checking"));
         Bundle pong = RuntimeStatusService.pingSystemServer();
         if (pong != null) {
+            RuntimeStatusStore.markPing(context, "OK", "pong received");
+            RuntimeDebugStore.append(context, "app", Constants.EV_RUNTIME_BINDER_PING_OK,
+                "runtime_ping", "pong received");
             RuntimeStatusService.applyPong(context, pong);
+        } else {
+            String pingFailure = RuntimeStatusService.lastPingFailure();
+            String summary = pingFailure.isEmpty() ? (bound == null
+                ? "callback unavailable; XposedService not bound"
+                : "no pong; callback unavailable or transaction failed") : pingFailure;
+            RuntimeStatusStore.markPing(context, "FAILED", summary);
+            RuntimeDebugStore.append(context, "app", Constants.EV_RUNTIME_BINDER_PING_FAILED,
+                "runtime_ping", summary);
+            Log.w(TAG, "Runtime Binder ping failed: " + summary);
         }
     }
 }

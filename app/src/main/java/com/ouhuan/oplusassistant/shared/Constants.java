@@ -106,6 +106,41 @@ public final class Constants {
     public static final String EV_ROM_UNSUPPORTED = "ROM_UNSUPPORTED";
     public static final String EV_STATE_CHANNEL_READY = "STATE_CHANNEL_READY";
     public static final String EV_STATE_CHANNEL_FAILED = "STATE_CHANNEL_FAILED";
+    /** App ↔ LSPosed/XposedService 生命周期事件。 */
+    public static final String EV_APP_ON_CREATE = "APP_ON_CREATE";
+    public static final String EV_XPOSED_LISTENER_REGISTER_BEGIN =
+        "XPOSED_LISTENER_REGISTER_BEGIN";
+    public static final String EV_XPOSED_LISTENER_REGISTER_OK =
+        "XPOSED_LISTENER_REGISTER_OK";
+    public static final String EV_XPOSED_LISTENER_REGISTER_FAILED =
+        "XPOSED_LISTENER_REGISTER_FAILED";
+    public static final String EV_XPOSED_SERVICE_BIND = "XPOSED_SERVICE_BIND";
+    public static final String EV_XPOSED_SERVICE_DIED = "XPOSED_SERVICE_DIED";
+    public static final String EV_REMOTE_PREFS_OPEN_OK = "REMOTE_PREFS_OPEN_OK";
+    public static final String EV_REMOTE_PREFS_OPEN_FAILED = "REMOTE_PREFS_OPEN_FAILED";
+    public static final String EV_REMOTE_PREFS_WRITE_ENABLED_OK =
+        "REMOTE_PREFS_WRITE_ENABLED_OK";
+    public static final String EV_REMOTE_PREFS_WRITE_ENABLED_FAILED =
+        "REMOTE_PREFS_WRITE_ENABLED_FAILED";
+    public static final String EV_REMOTE_PREFS_WRITE_OK = "REMOTE_PREFS_WRITE_OK";
+    public static final String EV_REMOTE_PREFS_WRITE_FAILED = "REMOTE_PREFS_WRITE_FAILED";
+    public static final String EV_CONFIG_RECONCILE_BEGIN = "CONFIG_RECONCILE_BEGIN";
+    public static final String EV_CONFIG_RECONCILE_OK = "CONFIG_RECONCILE_OK";
+    public static final String EV_CONFIG_RECONCILE_FAILED = "CONFIG_RECONCILE_FAILED";
+    /** system_server 运行态 Binder 握手事件。 */
+    public static final String EV_RUNTIME_BINDER_BIND_BEGIN = "RUNTIME_BINDER_BIND_BEGIN";
+    public static final String EV_RUNTIME_BINDER_BIND_OK = "RUNTIME_BINDER_BIND_OK";
+    public static final String EV_RUNTIME_BINDER_BIND_FAILED = "RUNTIME_BINDER_BIND_FAILED";
+    public static final String EV_RUNTIME_BINDER_PING_BEGIN = "RUNTIME_BINDER_PING_BEGIN";
+    public static final String EV_RUNTIME_BINDER_PING_OK = "RUNTIME_BINDER_PING_OK";
+    public static final String EV_RUNTIME_BINDER_PING_FAILED = "RUNTIME_BINDER_PING_FAILED";
+    /** system_server 读取 RemotePreferences 的结果。 */
+    public static final String EV_CONFIG_READ = "CONFIG_READ";
+    public static final String EV_CONFIG_READ_FAILED = "CONFIG_READ_FAILED";
+    public static final String EV_RESOLVER_QUERY_FAILED = "RESOLVER_QUERY_FAILED";
+    /** 精确标识 0x3F3，保留旧名称以兼容已有日志和测试。 */
+    public static final String EV_POWER_ASSIST_0X3F3_MATCHED =
+        "POWER_ASSIST_0X3F3_MATCHED";
     public static final String EV_POWER_ASSIST_EVENT_MATCHED = "POWER_ASSIST_EVENT_MATCHED";
     public static final String EV_POWER_ASSIST_NOT_MATCHED = "POWER_ASSIST_NOT_MATCHED";
 

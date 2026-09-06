@@ -2,6 +2,8 @@ package com.ouhuan.oplusassistant.xposed;
 
 import android.content.Context;
 
+import com.ouhuan.oplusassistant.shared.Constants;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
@@ -14,9 +16,22 @@ import io.github.libxposed.api.XposedInterface;
  */
 public final class ContextProvider {
 
+    public interface DiagnosticSink {
+        void onFailure(String event, String summary, Throwable error);
+    }
+
     private volatile Context context;
+    private final DiagnosticSink diagnosticSink;
     private volatile Runnable readyListener;
     private boolean readyNotified;
+
+    public ContextProvider() {
+        this(null);
+    }
+
+    public ContextProvider(DiagnosticSink diagnosticSink) {
+        this.diagnosticSink = diagnosticSink;
+    }
 
     /** 设置 context 就绪回调；若 context 已经捕获则立即补发一次。 */
     public void setReadyListener(Runnable listener) {
@@ -48,6 +63,8 @@ public final class ContextProvider {
                 }
             }
         } catch (Throwable ignored) {
+            reportFailure(Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE,
+                "captureEarly failed", ignored);
             // 兜底捕获会通过 createSystemContext Hook 继续
         }
     }
@@ -65,6 +82,8 @@ public final class ContextProvider {
                 return null;
             });
         } catch (Throwable ignored) {
+            reportFailure(Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE,
+                "install createSystemContext capture hook failed", ignored);
             // 捕获失败仅影响日志广播与启动能力，交由运行期 get() 再试
         }
     }
@@ -81,6 +100,8 @@ public final class ContextProvider {
                 setContext((Context) ctx);
             }
         } catch (Throwable ignored) {
+            reportFailure(Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE,
+                "read mSystemContext failed", ignored);
         }
     }
 
@@ -114,7 +135,24 @@ public final class ContextProvider {
         try {
             listener.run();
         } catch (Throwable ignored) {
+            reportFailure(Constants.EV_SYSTEM_CONTEXT_UNAVAILABLE,
+                "context ready listener failed", ignored);
             // context 回调失败不影响 system_server 启动。
+        }
+    }
+
+    private void reportFailure(String event, String summary, Throwable error) {
+        DiagnosticSink sink = diagnosticSink;
+        if (sink == null) {
+            return;
+        }
+        try {
+            sink.onFailure(event, summary, error);
+        } catch (Throwable ignored) {
+            android.util.Log.w(Constants.MODULE_PACKAGE,
+                "context diagnostic callback failed: " + ignored.getClass().getName()
+                    + ": " + ignored.getMessage(), ignored);
+            // 诊断回调本身失败不能阻断 system_server。
         }
     }
 }

@@ -33,7 +33,7 @@ public class LogEntryReceiver extends BroadcastReceiver {
         if (intent == null || intent.getAction() == null) {
             return;
         }
-        if (!isTrustedSender(intent)) {
+        if (!isTrustedSender(context, intent)) {
             return;
         }
         Bundle extras = intent.getExtras();
@@ -54,7 +54,11 @@ public class LogEntryReceiver extends BroadcastReceiver {
             AppExecutors.io().execute(() -> {
                 try {
                     AssistantStateStore.apply(context, data, candidates);
-                } catch (Throwable ignored) {
+                } catch (Throwable t) {
+                    RuntimeDebugStore.append(context, "broadcast",
+                        Constants.EV_STATE_CHANNEL_FAILED, "state_broadcast_persist",
+                        "STATE_REPORT persistence failed", t);
+                    Log.w(TAG, "STATE_REPORT persistence failed", t);
                 } finally {
                     result.finish();
                 }
@@ -66,14 +70,19 @@ public class LogEntryReceiver extends BroadcastReceiver {
             return;
         }
         AppExecutors.io().execute(() -> {
-            try {
-                LogEntity entity = LogEntity.fromMap(data);
-                LogDb.get(context).dao().insert(entity);
-                if (Constants.KIND_HOOK.equals(entity.kind)) {
+                try {
+                    LogEntity entity = LogEntity.fromMap(data);
+                    LogDb.get(context).dao().insert(entity);
+                    RuntimeDebugStore.append(context, "broadcast", entity.event,
+                        entity.hookStatus, entity.exceptionSummary, entity.exceptionType);
+                    if (Constants.KIND_HOOK.equals(entity.kind)) {
                     HookStateStore.update(context, entity);
                 }
-            } catch (Throwable ignored) {
-                // 持久化失败不影响广播应答
+            } catch (Throwable t) {
+                RuntimeDebugStore.append(context, "broadcast",
+                    Constants.EV_STATE_CHANNEL_FAILED, "log_broadcast_persist",
+                    "LOG_EVENT persistence failed", t);
+                Log.w(TAG, "LOG_EVENT persistence failed", t);
             } finally {
                 result.finish();
             }
@@ -84,7 +93,7 @@ public class LogEntryReceiver extends BroadcastReceiver {
      * API 34+ 直接校验真实发送方；更低版本依赖接收器上的 signature 级权限
      * （未持有权限的第三方发送者在 AMS 层即被拒绝）。
      */
-    private boolean isTrustedSender(Intent intent) {
+    private boolean isTrustedSender(Context context, Intent intent) {
         if (Build.VERSION.SDK_INT >= 34) {
             try {
                 int sentFromUid = getSentFromUid();
@@ -92,17 +101,29 @@ public class LogEntryReceiver extends BroadcastReceiver {
                 Log.i(TAG, "receive action=" + intent.getAction()
                     + " senderUid=" + sentFromUid
                     + " senderPackage=" + (sentFromPackage == null ? "" : sentFromPackage));
-                if (sentFromUid == Process.SYSTEM_UID || sentFromUid == Process.myUid()) {
-                    return true;
+                boolean trusted = sentFromUid == Process.SYSTEM_UID
+                    || sentFromUid == Process.myUid()
+                    || Constants.MODULE_PACKAGE.equals(sentFromPackage);
+                if (!trusted) {
+                    String summary = "rejected senderUid=" + sentFromUid
+                        + ",senderPackage=" + (sentFromPackage == null ? "" : sentFromPackage);
+                    RuntimeDebugStore.append(context, "broadcast",
+                        Constants.EV_STATE_CHANNEL_FAILED, "sender_identity", summary);
+                    Log.w(TAG, summary);
                 }
-                return Constants.MODULE_PACKAGE.equals(sentFromPackage);
+                return trusted;
             } catch (Throwable t) {
+                RuntimeDebugStore.append(context, "broadcast",
+                    Constants.EV_STATE_CHANNEL_FAILED, "sender_identity",
+                    "cannot read broadcast sender identity", t);
                 Log.w(TAG, "cannot read broadcast sender identity", t);
                 return false;
             }
         }
         Log.i(TAG, "receive action=" + intent.getAction()
             + " senderIdentity=unavailable(api<34)");
+        RuntimeDebugStore.append(context, "broadcast", "BROADCAST_SENDER_IDENTITY_UNAVAILABLE",
+            "sender_identity", "api<34 action=" + intent.getAction());
         return true;
     }
 }

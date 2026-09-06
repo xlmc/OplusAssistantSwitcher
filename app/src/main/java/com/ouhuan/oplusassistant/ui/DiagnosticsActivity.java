@@ -2,6 +2,10 @@ package com.ouhuan.oplusassistant.ui;
 
 import android.os.Bundle;
 import android.content.pm.PackageInfo;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.widget.Toast;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -13,6 +17,7 @@ import com.ouhuan.oplusassistant.data.AppExecutors;
 import com.ouhuan.oplusassistant.data.AssistantStateStore;
 import com.ouhuan.oplusassistant.data.HookStateStore;
 import com.ouhuan.oplusassistant.data.LogDb;
+import com.ouhuan.oplusassistant.data.RuntimeDebugStore;
 import com.ouhuan.oplusassistant.data.RuntimeStatusStore;
 import com.ouhuan.oplusassistant.shared.AssistantCandidate;
 import com.ouhuan.oplusassistant.shared.Constants;
@@ -45,9 +50,11 @@ public class DiagnosticsActivity extends AppCompatActivity {
     private TextView tvModuleVersion;
     private TextView tvRuntimeStatus;
     private TextView tvConfigState;
+    private TextView tvDebugLog;
     private TextView tvCandidates;
     private TextView tvSelection;
     private TextView tvStats;
+    private volatile String latestDebugLog = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,10 +71,12 @@ public class DiagnosticsActivity extends AppCompatActivity {
         tvModuleVersion = findViewById(R.id.tvModuleVersion);
         tvRuntimeStatus = findViewById(R.id.tvRuntimeStatus);
         tvConfigState = findViewById(R.id.tvConfigState);
+        tvDebugLog = findViewById(R.id.tvDebugLog);
         tvCandidates = findViewById(R.id.tvCandidates);
         tvSelection = findViewById(R.id.tvSelection);
         tvStats = findViewById(R.id.tvStats);
         findViewById(R.id.btnRefresh).setOnClickListener(v -> refresh());
+        findViewById(R.id.btnCopyDebugLog).setOnClickListener(v -> copyDebugLog());
     }
 
     @Override
@@ -156,6 +165,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 versionComparison);
             String runtimeStatus = describeRuntime(runtime);
             String configState = describeConfigState(config, runtime);
+            String debugLog = buildDebugLog(appVersion, runtime, config, moduleVersion,
+                service, device);
 
             // 候选清单与每个候选的资格来源（本地扫描 ∪ system_server 上报，仅诊断页展示）
             StringBuilder candidates = new StringBuilder();
@@ -220,6 +231,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
             String finalCandidates = candidates.toString();
             String finalSelection = selection;
             String finalStats = stats;
+            String finalDebugLog = debugLog;
             runOnUiThread(() -> {
                 tvDevice.setText(finalDevice);
                 tvService.setText(finalService);
@@ -233,6 +245,8 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 tvCandidates.setText(finalCandidates);
                 tvSelection.setText(finalSelection);
                 tvStats.setText(finalStats);
+                latestDebugLog = finalDebugLog;
+                tvDebugLog.setText(finalDebugLog);
             });
         });
     }
@@ -252,6 +266,9 @@ public class DiagnosticsActivity extends AppCompatActivity {
             + " / versionCode=" + (runtime.moduleVersionCode < 0
                 ? "-" : runtime.moduleVersionCode)
             + "\nloadedAt=" + loadedAt
+            + "\nmoduleUid=" + runtime.moduleUid
+            + "\npeerUid=" + runtime.peerUid
+            + "\npeerProcess=" + orDash(runtime.peerProcess)
             + "\nframework=" + orDash(runtime.frameworkName)
             + " " + orDash(runtime.frameworkVersion)
             + "\nframeworkApi=" + runtime.frameworkApi
@@ -266,6 +283,11 @@ public class DiagnosticsActivity extends AppCompatActivity {
             + "\nhookInstalled=" + HookStateStore.isInstalled(this)
             + "\npowerAssistStatus=" + orDash(runtime.powerAssistStatus)
             + "\npowerAssistMatchedAt=" + matchedAt
+            + "\nbinderPing=" + orDash(runtime.pingStatus)
+            + "\nbinderPingAt=" + (runtime.pingAt > 0L
+                ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                    .format(new Date(runtime.pingAt)) : "-")
+            + "\nbinderPingSummary=" + orDash(runtime.pingSummary)
             + "\nlastEvent=" + orDash(runtime.lastEvent)
             + "\neventSequence=" + runtime.eventSequence;
     }
@@ -276,6 +298,7 @@ public class DiagnosticsActivity extends AppCompatActivity {
             + "\nlocalDesired.detailDiagnostics=" + config.localDesiredDetailDiagnostics
             + "\nlocalDesired.packageName=" + orDash(config.localDesiredPackage)
             + "\nlocalDesired.componentName=" + orDash(config.localDesiredComponent)
+            + "\nxposedService.bound=" + config.serviceBound
             + "\nremotePreferences.available=" + config.remoteAvailable
             + "\nremotePreferences.enabled=" + (config.remoteAvailable
                 ? String.valueOf(config.remoteEnabled) : "-")
@@ -306,6 +329,36 @@ public class DiagnosticsActivity extends AppCompatActivity {
             return new AppVersion(name, info.getLongVersionCode());
         } catch (Throwable t) {
             return new AppVersion("", Constants.UNKNOWN_VERSION_CODE);
+        }
+    }
+
+    private String buildDebugLog(AppVersion appVersion, RuntimeStatusStore.Snapshot runtime,
+                                 ConfigStore.Status config, String moduleVersion,
+                                 String service, String device) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Oplus Assistant Switcher Debug\n")
+            .append("appVersion=").append(orDash(appVersion.name))
+            .append(" versionCode=").append(appVersion.code).append('\n')
+            .append("device=\n").append(device).append('\n')
+            .append("frameworkService=\n").append(service).append('\n')
+            .append("moduleVersion=\n").append(moduleVersion).append('\n')
+            .append("runtime=\n").append(describeRuntime(runtime)).append('\n')
+            .append("config=\n").append(describeConfigState(config, runtime)).append('\n')
+            .append("recentEvents(last 50, newest first)=\n")
+            .append(RuntimeDebugStore.format(RuntimeDebugStore.recent(this, 50)));
+        return sb.toString();
+    }
+
+    private void copyDebugLog() {
+        String text = latestDebugLog;
+        if (text == null || text.isEmpty()) {
+            text = "(debug log is empty; tap refresh first)";
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(
+            Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText("Oplus Debug log", text));
+            Toast.makeText(this, R.string.toast_copied, Toast.LENGTH_SHORT).show();
         }
     }
 

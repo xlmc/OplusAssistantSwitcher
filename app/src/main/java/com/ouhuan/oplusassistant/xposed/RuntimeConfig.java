@@ -61,7 +61,7 @@ public final class RuntimeConfig {
                 try {
                     listener.onConfigRead(snapshot);
                 } catch (Throwable t) {
-                    safeLog("RuntimeConfig listener failed: " + t);
+                    safeLog("RuntimeConfig listener failed", t);
                 }
             }
         }
@@ -88,19 +88,29 @@ public final class RuntimeConfig {
             String comp = prefs.getString(Constants.KEY_SELECTED_COMPONENT, null);
             return new Snapshot(enabled, detail, pkg, comp);
         } catch (Throwable t) {
-            safeLog("RuntimeConfig read failed: " + t);
+            safeLog("RuntimeConfig read failed", t);
             return null;
         }
     }
 
     private void safeLog(String msg) {
+        safeLog(msg, null);
+    }
+
+    private void safeLog(String msg, Throwable error) {
         try {
             if (xposed != null) {
-                xposed.log(android.util.Log.WARN, Constants.MODULE_PACKAGE, msg);
+                xposed.log(android.util.Log.WARN, Constants.MODULE_PACKAGE,
+                    error == null ? msg : msg + ": " + error.getClass().getName() + ": "
+                        + error.getMessage());
+                return;
             }
-        } catch (Throwable ignored) {
-            // 日志通道不可用时保持静默
+        } catch (Throwable loggingFailure) {
+            android.util.Log.w(Constants.MODULE_PACKAGE,
+                msg + " (Xposed log failed: " + loggingFailure.getClass().getName()
+                    + ": " + loggingFailure.getMessage() + ")", error);
         }
+        android.util.Log.w(Constants.MODULE_PACKAGE, msg, error);
     }
 
     @Override
