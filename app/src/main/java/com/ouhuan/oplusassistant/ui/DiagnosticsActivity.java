@@ -271,9 +271,15 @@ public class DiagnosticsActivity extends AppCompatActivity {
             + "\nmoduleUid=" + runtime.moduleUid
             + "\npeerUid=" + runtime.peerUid
             + "\npeerProcess=" + orDash(runtime.peerProcess)
+            + "\nframeworkServiceConnected=" + runtime.frameworkConnected
             + "\nframework=" + orDash(runtime.frameworkName)
             + " " + orDash(runtime.frameworkVersion)
             + "\nframeworkApi=" + runtime.frameworkApi
+            + "\nframeworkProperties=" + runtime.frameworkProperties
+            + "\nframeworkCapSystem=" + ((runtime.frameworkProperties
+                & io.github.libxposed.service.XposedService.PROP_CAP_SYSTEM) != 0L)
+            + "\nframeworkCapRemote=" + ((runtime.frameworkProperties
+                & io.github.libxposed.service.XposedService.PROP_CAP_REMOTE) != 0L)
             + "\ntargetProcess=" + orDash(runtime.targetProcess)
             + "\ntargetState=" + orDash(runtime.targetState)
             + "\ntargetLoadedVersionCode=" + targetVersion
@@ -411,6 +417,12 @@ public class DiagnosticsActivity extends AppCompatActivity {
                 sb.append("\nframework=").append(s.getFrameworkName())
                     .append(" ").append(s.getFrameworkVersion());
                 sb.append("\napi=").append(s.getApiVersion());
+                long properties = s.getFrameworkProperties();
+                sb.append("\nproperties=").append(properties)
+                    .append("\ncapSystem=").append((properties
+                        & io.github.libxposed.service.XposedService.PROP_CAP_SYSTEM) != 0L)
+                    .append("\ncapRemote=").append((properties
+                        & io.github.libxposed.service.XposedService.PROP_CAP_REMOTE) != 0L);
                 sb.append("\nscope=").append(String.valueOf(s.getScope()));
             }
         } catch (Throwable t) {
@@ -429,6 +441,15 @@ public class DiagnosticsActivity extends AppCompatActivity {
         if ("FAILED".equals(lifecycle.status)) {
             sb.append("\nstate=registration_failed");
         }
+        if ("TIMEOUT".equals(lifecycle.status)) {
+            sb.append("\nstate=bind_timeout");
+        }
+        if ("DIED".equals(lifecycle.status)) {
+            sb.append("\nstate=service_died_waiting_rebind");
+        }
+        sb.append("\nindependentFrameworkLog=LSPosed/Xposed tag ")
+            .append(Constants.MODULE_PACKAGE)
+            .append("; events MODULE_LOADED..HOOK_INSTALLED are written synchronously");
         if (!lifecycle.error.isEmpty()) {
             sb.append("\nlastAppError=").append(lifecycle.error);
         }

@@ -114,8 +114,13 @@ public final class Constants {
         "XPOSED_LISTENER_REGISTER_OK";
     public static final String EV_XPOSED_LISTENER_REGISTER_FAILED =
         "XPOSED_LISTENER_REGISTER_FAILED";
+    public static final String EV_XPOSED_SERVICE_WAIT_BEGIN =
+        "XPOSED_SERVICE_WAIT_BEGIN";
     public static final String EV_XPOSED_SERVICE_BIND = "XPOSED_SERVICE_BIND";
+    public static final String EV_XPOSED_SERVICE_BIND_TIMEOUT =
+        "XPOSED_SERVICE_BIND_TIMEOUT";
     public static final String EV_XPOSED_SERVICE_DIED = "XPOSED_SERVICE_DIED";
+    public static final String EV_REMOTE_PREFS_OPEN_BEGIN = "REMOTE_PREFS_OPEN_BEGIN";
     public static final String EV_REMOTE_PREFS_OPEN_OK = "REMOTE_PREFS_OPEN_OK";
     public static final String EV_REMOTE_PREFS_OPEN_FAILED = "REMOTE_PREFS_OPEN_FAILED";
     public static final String EV_REMOTE_PREFS_WRITE_ENABLED_OK =

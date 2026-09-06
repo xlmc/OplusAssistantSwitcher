@@ -297,6 +297,8 @@ public final class ConfigStore {
     }
 
     private static SharedPreferences remotePrefs(Context context) {
+        RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_BEGIN,
+            "remote_preferences", "group=" + Constants.PREFS_GROUP);
         XposedService xposedService = AssistApp.service();
         if (xposedService == null) {
             RuntimeDebugStore.append(context, "app", Constants.EV_REMOTE_PREFS_OPEN_FAILED,

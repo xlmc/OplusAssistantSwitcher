@@ -13,6 +13,8 @@
 - 配置写入以 Remote Preferences `commit()` 成功为生效闸门；断线/失败时保留本地期望、显示等待同步，并在服务重连后自动 reconcile
 - 诊断页增加 Binder ping、真实 `system_server` 进程/加载版本、独立 Hook 生命周期、状态通道、电源键匹配及三方配置状态
 - 增加 App↔XposedService、system_server Hook、运行态 Binder、配置读取与 0x3F3 路由的分阶段 Debug 事件；异常至少记录 stage、错误类型与消息，诊断页支持复制最近 50 条完整记录
+- 注册成功后等待 onServiceBind 增加 15 秒明确超时状态；Remote Preferences 增加打开开始事件
+- system_server Hook 里程碑始终同步写入 LSPosed/Xposed 日志，诊断页提供独立日志 Tag 与事件检索说明
 - 诊断页直接展示 Xposed listener 的注册阶段、`onServiceBind` 是否触发、注册到绑定的等待时长与最后异常，不再要求从日志猜测“已注册但未绑定”
 
 ### Added（V1，对应开发书 v1.0）

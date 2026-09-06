@@ -144,6 +144,12 @@ keytool -genkeypair -v \
 
 禁止：先加大量兼容代码再验证最小 Hook 链路；扩大作用域碰运气；热路径数据库/网络/长耗时任务；失败回退小布；写死第三方助手包名；把普通 App 放进助手列表；debug keystore 作正式签名。
 
-## 6. 实机验收
+## 6. 独立框架证据与服务等待
+
+- 官方 XposedService helper 只负责缓存/投递 Binder，不提供等待超时；App 在 registerListener() 返回后等待 onServiceBind 最多 15 秒，超时记录 bind_timeout，避免长期显示模糊的“未连接”。
+- 官方 helper 可能在 registerListener() 内同步触发 onServiceBind()；状态机保持 BOUND，不因随后记录 REGISTER_OK 而回退。
+- DiagnosticReporter 在发送 App Binder/广播之前同步写入 Xposed 日志；诊断页导出中标明 Tag com.ouhuan.oplusassistant 及 MODULE_LOADED～HOOK_INSTALLED 检索范围。App 无法反向读取 LSPosed 日志，Binder 快照为空时先查看该日志。
+
+## 7. 实机验收
 
 发布前必须通过开发书 13 的 V1 验收标准与 14 的 P0 实机测试矩阵（普通单击/长按/双击不受影响、卸载目标后静默结束且日志明确、ROM Hook 失效不崩 system_server 等）。测试矩阵与预期日志见开发书对应章节。

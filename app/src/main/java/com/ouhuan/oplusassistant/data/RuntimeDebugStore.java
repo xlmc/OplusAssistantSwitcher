@@ -29,6 +29,7 @@ public final class RuntimeDebugStore {
     private static final String KEY_APP_WAIT_START_AT = "app_wait_start_at";
     private static final String KEY_APP_REGISTERED_AT = "app_registered_at";
     private static final String KEY_APP_BOUND_AT = "app_bound_at";
+    private static final String KEY_APP_WAIT_END_AT = "app_wait_end_at";
     private static final String KEY_APP_LAST_EVENT = "app_last_event";
     private static final String KEY_APP_LAST_EVENT_AT = "app_last_event_at";
     private static final String KEY_APP_ERROR = "app_error";
@@ -63,6 +64,7 @@ public final class RuntimeDebugStore {
                 SharedPreferences prefs = context.getApplicationContext()
                     .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
                 String raw = prefs.getString(KEY_ENTRIES, "");
+                String existingAppStatus = prefs.getString(KEY_APP_STATUS, "UNKNOWN");
                 List<String> records = splitRecords(raw);
                 records.add(record);
                 while (records.size() > MAX_ENTRIES) {
@@ -71,7 +73,7 @@ public final class RuntimeDebugStore {
                 SharedPreferences.Editor editor = prefs.edit()
                     .putString(KEY_ENTRIES, joinRecords(records));
                 updateAppLifecycle(editor, source, event, System.currentTimeMillis(), summary,
-                    exception);
+                    exception, existingAppStatus);
                 editor.apply();
             }
         } catch (Throwable ignored) {
@@ -90,8 +92,10 @@ public final class RuntimeDebugStore {
             long waitStart = prefs.getLong(KEY_APP_WAIT_START_AT, 0L);
             long registeredAt = prefs.getLong(KEY_APP_REGISTERED_AT, 0L);
             long boundAt = prefs.getLong(KEY_APP_BOUND_AT, 0L);
+            long waitEndAt = prefs.getLong(KEY_APP_WAIT_END_AT, 0L);
             long now = System.currentTimeMillis();
-            long waitEnd = boundAt > 0L ? boundAt : now;
+            long waitEnd = waitEndAt > 0L ? waitEndAt
+                : (boundAt > 0L ? boundAt : now);
             long waitMs = waitStart > 0L && waitEnd >= waitStart
                 ? waitEnd - waitStart : 0L;
             return new AppLifecycleSnapshot(
@@ -275,14 +279,15 @@ public final class RuntimeDebugStore {
     }
 
     private static void updateAppLifecycle(SharedPreferences.Editor editor, String source,
-            String event, long now, String summary, String exception) {
+            String event, long now, String summary, String exception, String existingStatus) {
         if (!"app".equals(source) || event == null) {
             return;
         }
         editor.putString(KEY_APP_LAST_EVENT, event)
             .putLong(KEY_APP_LAST_EVENT_AT, now);
         String detail = isEmpty(exception) ? value(summary) : exception;
-        if (!isEmpty(exception) || event.endsWith("FAILED") || event.endsWith("DIED")) {
+        if (!isEmpty(exception) || event.endsWith("FAILED") || event.endsWith("DIED")
+            || event.endsWith("TIMEOUT")) {
             editor.putString(KEY_APP_ERROR, detail);
         }
         if (Constants.EV_APP_ON_CREATE.equals(event)) {
@@ -291,32 +296,50 @@ public final class RuntimeDebugStore {
                 .putLong(KEY_APP_WAIT_START_AT, 0L)
                 .putLong(KEY_APP_REGISTERED_AT, 0L)
                 .putLong(KEY_APP_BOUND_AT, 0L)
+                .putLong(KEY_APP_WAIT_END_AT, 0L)
                 .putString(KEY_APP_ERROR, "");
         } else if (Constants.EV_XPOSED_LISTENER_REGISTER_BEGIN.equals(event)) {
             editor.putString(KEY_APP_STAGE, "registerListener")
                 .putString(KEY_APP_STATUS, "REGISTERING")
-                .putLong(KEY_APP_WAIT_START_AT, now)
+                .putLong(KEY_APP_WAIT_START_AT, 0L)
                 .putLong(KEY_APP_REGISTERED_AT, 0L)
                 .putLong(KEY_APP_BOUND_AT, 0L)
+                .putLong(KEY_APP_WAIT_END_AT, 0L)
                 .putString(KEY_APP_ERROR, "");
         } else if (Constants.EV_XPOSED_LISTENER_REGISTER_OK.equals(event)) {
-            editor.putString(KEY_APP_STAGE, "registerListener")
-                .putString(KEY_APP_STATUS, "REGISTERED")
-                .putLong(KEY_APP_REGISTERED_AT, now);
+            // 官方实现可能在 registerListener() 内同步触发 onServiceBind()；
+            // 此时 REGISTER_OK 只是“调用返回”，不能把已 BOUND 的真实状态回退。
+            editor.putLong(KEY_APP_REGISTERED_AT, now);
+            if (!"BOUND".equals(existingStatus)) {
+                editor.putString(KEY_APP_STAGE, "registerListener")
+                    .putString(KEY_APP_STATUS, "REGISTERED");
+            }
             if (summary != null && !summary.isEmpty()) {
                 editor.putString(KEY_APP_ERROR, "");
             }
+        } else if (Constants.EV_XPOSED_SERVICE_WAIT_BEGIN.equals(event)) {
+            editor.putString(KEY_APP_STAGE, "onServiceBind")
+                .putString(KEY_APP_STATUS, "REGISTERED")
+                .putLong(KEY_APP_WAIT_START_AT, now)
+                .putLong(KEY_APP_WAIT_END_AT, 0L);
         } else if (Constants.EV_XPOSED_LISTENER_REGISTER_FAILED.equals(event)) {
             editor.putString(KEY_APP_STAGE, "registerListener")
-                .putString(KEY_APP_STATUS, "FAILED");
+                .putString(KEY_APP_STATUS, "FAILED")
+                .putLong(KEY_APP_WAIT_END_AT, now);
         } else if (Constants.EV_XPOSED_SERVICE_BIND.equals(event)) {
             editor.putString(KEY_APP_STAGE, "onServiceBind")
                 .putString(KEY_APP_STATUS, "BOUND")
                 .putLong(KEY_APP_BOUND_AT, now)
+                .putLong(KEY_APP_WAIT_END_AT, now)
                 .putString(KEY_APP_ERROR, "");
+        } else if (Constants.EV_XPOSED_SERVICE_BIND_TIMEOUT.equals(event)) {
+            editor.putString(KEY_APP_STAGE, "onServiceBind")
+                .putString(KEY_APP_STATUS, "TIMEOUT")
+                .putLong(KEY_APP_WAIT_END_AT, now);
         } else if (Constants.EV_XPOSED_SERVICE_DIED.equals(event)) {
             editor.putString(KEY_APP_STAGE, "onServiceDied")
-                .putString(KEY_APP_STATUS, "DIED");
+                .putString(KEY_APP_STATUS, "DIED")
+                .putLong(KEY_APP_WAIT_END_AT, now);
         }
     }
 

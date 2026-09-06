@@ -3,6 +3,8 @@ package com.ouhuan.oplusassistant.app;
 import android.app.Application;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import com.ouhuan.oplusassistant.data.AppExecutors;
@@ -20,7 +22,12 @@ import io.github.libxposed.service.XposedServiceHelper;
 public class AssistApp extends Application implements XposedServiceHelper.OnServiceListener {
 
     private static final String TAG = "OplusAssistant";
+    private static final long XPOSED_SERVICE_WAIT_TIMEOUT_MS = 15_000L;
+    private static final Handler SERVICE_HANDLER = new Handler(Looper.getMainLooper());
+    private static final Object SERVICE_STATE_LOCK = new Object();
     private static volatile XposedService service;
+    private static volatile Runnable serviceWaitTimeout;
+    private static volatile long serviceWaitStartedAt;
 
     public static XposedService service() {
         return service;
@@ -39,7 +46,9 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
             RuntimeDebugStore.append(context, "app",
                 Constants.EV_XPOSED_LISTENER_REGISTER_OK, "xposed_service",
                 "registerListener returned");
+            beginServiceWait(context, "registerListener returned");
         } catch (Throwable ignored) {
+            cancelServiceWait();
             RuntimeDebugStore.append(context, "app",
                 Constants.EV_XPOSED_LISTENER_REGISTER_FAILED, "xposed_service",
                 "registerListener failed", ignored);
@@ -50,10 +59,14 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
 
     @Override
     public void onServiceBind(XposedService bound) {
-        service = bound;
         Context context = getApplicationContext();
-        RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_SERVICE_BIND,
-            "xposed_service", "service=" + (bound == null ? "null" : bound.getClass().getName()));
+        synchronized (SERVICE_STATE_LOCK) {
+            service = bound;
+            cancelServiceWaitLocked();
+            RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_SERVICE_BIND,
+                "xposed_service", "service="
+                    + (bound == null ? "null" : bound.getClass().getName()));
+        }
         AppExecutors.io().execute(() -> {
             ConfigStore.reconcile(context);
             refreshRuntime(context);
@@ -62,16 +75,73 @@ public class AssistApp extends Application implements XposedServiceHelper.OnServ
 
     @Override
     public void onServiceDied(XposedService died) {
-        boolean wasCurrent = died == service;
-        if (died == service) {
+        Context context = getApplicationContext();
+        synchronized (SERVICE_STATE_LOCK) {
+            boolean wasCurrent = died == service;
+            if (!wasCurrent) {
+                return;
+            }
             service = null;
-        }
-        if (wasCurrent) {
-            Context context = getApplicationContext();
+            cancelServiceWaitLocked();
             RuntimeDebugStore.append(context, "app", Constants.EV_XPOSED_SERVICE_DIED,
                 "xposed_service", "service_died");
-            AppExecutors.io().execute(() -> RuntimeStatusStore.updateFramework(context, null));
+            beginServiceWaitLocked(context, "service died; waiting for rebind");
         }
+        AppExecutors.io().execute(() -> RuntimeStatusStore.updateFramework(context, null));
+    }
+
+    /** 官方 helper 没有超时；把“注册成功但没有收到 Binder”变成可确认的诊断状态。 */
+    private static void beginServiceWait(Context context, String reason) {
+        synchronized (SERVICE_STATE_LOCK) {
+            beginServiceWaitLocked(context, reason);
+        }
+    }
+
+    private static void beginServiceWaitLocked(Context context, String reason) {
+        if (service != null || context == null) {
+            return;
+        }
+        cancelServiceWaitLocked();
+        Context appContext = context.getApplicationContext();
+        serviceWaitStartedAt = System.currentTimeMillis();
+        long startedAt = serviceWaitStartedAt;
+        RuntimeDebugStore.append(appContext, "app",
+            Constants.EV_XPOSED_SERVICE_WAIT_BEGIN, "onServiceBind",
+            "reason=" + reason + ",timeoutMs=" + XPOSED_SERVICE_WAIT_TIMEOUT_MS);
+        Runnable timeout = () -> onServiceWaitTimeout(appContext, startedAt);
+        serviceWaitTimeout = timeout;
+        SERVICE_HANDLER.postDelayed(timeout, XPOSED_SERVICE_WAIT_TIMEOUT_MS);
+    }
+
+    private static void onServiceWaitTimeout(Context context, long startedAt) {
+        synchronized (SERVICE_STATE_LOCK) {
+            if (service != null || serviceWaitStartedAt != startedAt
+                || serviceWaitTimeout == null) {
+                return;
+            }
+            serviceWaitTimeout = null;
+            long waited = Math.max(0L, System.currentTimeMillis() - startedAt);
+            String summary = "registerListener returned but onServiceBind was not received"
+                + "; waitedMs=" + waited + "; timeoutMs=" + XPOSED_SERVICE_WAIT_TIMEOUT_MS;
+            RuntimeDebugStore.append(context, "app",
+                Constants.EV_XPOSED_SERVICE_BIND_TIMEOUT, "onServiceBind", summary);
+            Log.w(TAG, "XposedService bind timeout: " + summary);
+        }
+    }
+
+    private static void cancelServiceWait() {
+        synchronized (SERVICE_STATE_LOCK) {
+            cancelServiceWaitLocked();
+        }
+    }
+
+    private static void cancelServiceWaitLocked() {
+        Runnable timeout = serviceWaitTimeout;
+        if (timeout != null) {
+            SERVICE_HANDLER.removeCallbacks(timeout);
+            serviceWaitTimeout = null;
+        }
+        serviceWaitStartedAt = 0L;
     }
 
     /** 刷新官方框架握手、system_server 目标及自定义 Binder ping 快照。 */
